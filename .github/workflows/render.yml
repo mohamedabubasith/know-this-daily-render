@@ -2,6 +2,8 @@ name: render
 run-name: "render ${{ inputs.job_id }}"
 
 # Started by the Know This Daily studio (or by hand): one shot list in, one finished video out as an artifact.
+# The slow parts run at the same time on separate runners: 5 runners make the voice lines (voice G), 1 makes the
+# pictures; then one runner adds the music and renders, reusing what they made.
 on:
   workflow_dispatch:
     inputs:
@@ -14,7 +16,7 @@ on:
         required: true
         type: string
       voice:
-        description: "g = IndicF5 with the storytelling clip, on this runner's CPU; kayal = Maya 2 on the HF GPU Space"
+        description: "g = IndicF5 with the storytelling clip, on these runners' CPUs; kayal = Maya 2 on the HF GPU Space"
         required: false
         default: g
         type: choice
@@ -27,61 +29,42 @@ concurrency:
   group: render-${{ inputs.job_id }}
   cancel-in-progress: true
 
+env:
+  HYPERFRAMES_NO_TELEMETRY: "1"
+  SHORTS_CONFIG: ${{ github.workspace }}/.config
+  JOB_ID: ${{ inputs.job_id }}
+  FILM_GZ_B64: ${{ inputs.film_gz_b64 }}
+  VOICE_PARTS: "5"
+
 jobs:
-  render:
+  voice:
+    if: inputs.voice == 'g'
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        part: [0, 1, 2, 3, 4]
     env:
-      HYPERFRAMES_NO_TELEMETRY: "1"
-      SHORTS_CONFIG: ${{ github.workspace }}/.config
-      JOB_ID: ${{ inputs.job_id }}
+      SHORTS_BACKUP_VOICE: "1"
+      SHORTS_VOICE_SPACE: ""
     steps:
       - uses: actions/checkout@v4
-
-      - name: System packages (ffmpeg, music, Tamil font)
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg fluidsynth fluid-soundfont-gm fonts-noto-core >/dev/null
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
+      - name: ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
           cache-dependency-glob: "requirements*.lock"
-
-      - name: Python packages
-        run: |
-          uv venv --python 3.13 .venv
-          uv pip install --python .venv -r requirements.lock
-
-      - name: Cache HyperFrames and Chrome
+      - name: Voice model cache
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.npm
-            ~/.cache/hyperframes
-            ~/.cache/puppeteer
-            ~/.cache/huggingface
-          key: models-hyperframes-0.9.40-indicf5-${{ runner.os }}
-
-      - name: Claude Code (only drawn explainer films use it)
-        run: npm install -g @anthropic-ai/claude-code >/dev/null 2>&1 || true
-
-      - name: Secrets to files
+          path: ~/.cache/huggingface
+          key: indicf5-model-v1
+      - name: Python packages and voice G server
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          mkdir -p "$SHORTS_CONFIG" && chmod 700 "$SHORTS_CONFIG"
-          [ -n "$HF_TOKEN" ] && printf '%s' "$HF_TOKEN" > "$SHORTS_CONFIG/hf-token" || echo "no HF token: Kayal's voice will not work"
-
-      - name: Voice G (IndicF5) on this runner
-        if: inputs.voice == 'g'
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
+          uv venv --python 3.13 .venv && uv pip install --python .venv -r requirements.lock
           uv venv --python 3.11 "$HOME/indic-env"
           uv pip install --python "$HOME/indic-env" -r requirements-indic.lock \
             --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match
@@ -91,15 +74,101 @@ jobs:
           cd "$HOME/indic" && nohup "$HOME/indic-env/bin/uvicorn" tts_server:app --host 127.0.0.1 --port 8082 > "$HOME/indic/server.log" 2>&1 &
           for i in $(seq 1 60); do curl -sf http://127.0.0.1:8082/ >/dev/null && break; sleep 2; done
           curl -sf http://127.0.0.1:8082/ && echo " voice G server up"
+      - name: Make my voice lines
+        run: .venv/bin/python part.py voice ${{ matrix.part }} "$VOICE_PARTS" "job/$JOB_ID"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: voice-${{ matrix.part }}
+          path: cache/voice/*.mp3
+          retention-days: 1
+          if-no-files-found: ignore
+      - name: Voice server log (on failure)
+        if: failure()
+        run: tail -40 "$HOME/indic/server.log" || true
 
-      - name: Make the video
+  pictures:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "requirements*.lock"
+      - name: Python packages and token
         env:
-          FILM_GZ_B64: ${{ inputs.film_gz_b64 }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          uv venv --python 3.13 .venv && uv pip install --python .venv -r requirements.lock
+          mkdir -p "$SHORTS_CONFIG" && chmod 700 "$SHORTS_CONFIG"
+          [ -n "$HF_TOKEN" ] && printf '%s' "$HF_TOKEN" > "$SHORTS_CONFIG/hf-token" || true
+      - name: Make the pictures
+        run: .venv/bin/python part.py pictures "job/$JOB_ID"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pictures
+          path: cache/pictures/*.jpg
+          retention-days: 1
+          if-no-files-found: ignore
+
+  render:
+    needs: [voice, pictures]
+    if: ${{ !cancelled() && needs.pictures.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.voice.result) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: System packages (ffmpeg, music, Tamil font)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fluidsynth fluid-soundfont-gm fonts-noto-core >/dev/null
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "requirements*.lock"
+      - name: Python packages
+        run: uv venv --python 3.13 .venv && uv pip install --python .venv -r requirements.lock
+      - name: Cache HyperFrames and Chrome
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/hyperframes
+            ~/.cache/puppeteer
+          key: hyperframes-0.9.40-${{ runner.os }}
+      - name: Claude Code (only drawn explainer films use it)
+        run: npm install -g @anthropic-ai/claude-code >/dev/null 2>&1 || true
+      - name: Secrets to files
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          mkdir -p "$SHORTS_CONFIG" && chmod 700 "$SHORTS_CONFIG"
+          [ -n "$HF_TOKEN" ] && printf '%s' "$HF_TOKEN" > "$SHORTS_CONFIG/hf-token" || true
+      - name: Voice lines from the voice runners
+        if: inputs.voice == 'g'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: voice-*
+          path: cache/voice
+          merge-multiple: true
+      - name: Pictures from the pictures runner
+        uses: actions/download-artifact@v4
+        with:
+          name: pictures
+          path: cache/pictures
+      - name: Music and render
+        env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           SHORTS_VOICE_SPACE: ${{ inputs.voice == 'kayal' && secrets.SHORTS_VOICE_SPACE || '' }}
           SHORTS_BACKUP_VOICE: ${{ inputs.voice == 'g' && '1' || '' }}
-        run: .venv/bin/python render.py "job/$JOB_ID"
-
+        run: |
+          echo "voice lines ready: $(ls cache/voice 2>/dev/null | wc -l), pictures ready: $(ls cache/pictures | wc -l)"
+          .venv/bin/python render.py "job/$JOB_ID"
       - name: Keep the result
         if: always()
         uses: actions/upload-artifact@v4
@@ -112,7 +181,3 @@ jobs:
             job/${{ inputs.job_id }}/film.json
           retention-days: 7
           if-no-files-found: warn
-
-      - name: Voice server log (on failure)
-        if: failure() && inputs.voice == 'g'
-        run: tail -40 "$HOME/indic/server.log" || true
