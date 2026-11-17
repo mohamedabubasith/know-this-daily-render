@@ -1,6 +1,6 @@
 // Animated scenes for "anim" shots: drawn and moved entirely in code, every frame a function of
 // timeline time (seeked, never played), so renders are identical. One builder per scene type.
-// window.buildAnim(root, shot, tl, accent) fills `root` (a 1080x1920 box) and adds tweens to `tl`.
+// window.buildAnim(root, shot, tl, accent, theme) fills `root` (a 1080x1920 box) and adds tweens to `tl`.
 (function () {
   const NS = "http://www.w3.org/2000/svg";
   const W = 1080, H = 1920;
@@ -28,17 +28,30 @@
   const reps = (span, cycle) => Math.max(0, Math.floor(span / cycle) - 1);
   const clip = (s, n) => (s || "").length > n ? s.slice(0, n - 1) + "…" : s || "";
 
+  // Colour themes, picked from the film's topic (pipeline.theme_for), so every film does not look the same.
+  // deep/deeper: background; cool: second glow; box: card fill; ink: dark text on light bars; line: strokes; globe: sea.
+  const THEMES = {
+    night:    { deep: "#0d1030", deeper: "#05060f", cool: T.cool, box: T.box, ink: T.ink, line: T.line, globe: T.globe },
+    heritage: { deep: "#3b1d0e", deeper: "#120703", cool: "#d9893f", box: "#4a2512", ink: "#2b1308", line: "#f0b878", globe: "#2c1709" },
+    ocean:    { deep: "#06303a", deeper: "#021015", cool: "#27c2d8", box: "#0a3b47", ink: "#06262e", line: "#7fe3f0", globe: "#063a4a" },
+    nature:   { deep: "#12301a", deeper: "#050f07", cool: "#6ccf6f", box: "#173d22", ink: "#0f2414", line: "#a6e8a0", globe: "#0f3a1e" },
+    space:    { deep: "#1c0f3a", deeper: "#05020f", cool: "#9b6bff", box: "#241450", ink: "#170b33", line: "#c3a6ff", globe: "#150b33" },
+    tech:     { deep: "#0f1d2b", deeper: "#04080d", cool: "#20d3ff", box: "#13283a", ink: "#0b1824", line: "#7fe8ff", globe: "#0b2235" },
+    kids:     { deep: "#2a3aa8", deeper: "#121a5c", cool: "#ff7ac8", box: "#3346c0", ink: "#1a2366", line: "#ffd6f0", globe: "#25339a" },
+  };
+  let T = THEMES.night;
+
   // ---------------------------------------------------------------- shared stage
   function stage(root, shot, tl, accent) {
     root.classList.add("anim-stage");
     const bg = html("div", "anim-bg", null, root);
-    bg.style.background = `radial-gradient(120% 80% at 50% 38%, ${accent}33 0%, #0d1030 45%, #05060f 100%)`;
+    bg.style.background = `radial-gradient(120% 80% at 50% 38%, ${accent}33 0%, ${T.deep} 45%, ${T.deeper} 100%)`;
     // Slow-moving glow orbs give depth behind the drawing.
     const orbs = [[220, 520, 520], [860, 900, 640], [420, 1380, 560]];
     orbs.forEach(([x, y, r], i) => {
       const o = html("div", "anim-orb", null, root);
       Object.assign(o.style, { left: `${x - r / 2}px`, top: `${y - r / 2}px`, width: `${r}px`, height: `${r}px`,
-        background: `radial-gradient(circle, ${i === 1 ? accent : "#5b7cff"}55 0%, transparent 70%)` });
+        background: `radial-gradient(circle, ${i === 1 ? accent : T.cool}55 0%, transparent 70%)` });
       tl.fromTo(o, { x: -40, y: 20 }, { x: 40, y: -30, duration: shot.clipEnd - shot.clipStart, ease: "sine.inOut" }, shot.clipStart);
     });
     // A faint grid that drifts upward, like a technical drawing board.
@@ -92,7 +105,7 @@
     pts.forEach((p, i) => {
       const g = el("g", { transform: `translate(${p.x} ${p.y})` }, s.draw);
       const box = el("g", {}, g);
-      el("rect", { x: -200, y: -66, width: 400, height: 132, rx: 34, fill: "#11163a", stroke: i === pts.length - 1 ? accent : "#ffffff55", "stroke-width": 5 }, box);
+      el("rect", { x: -200, y: -66, width: 400, height: 132, rx: 34, fill: T.box, stroke: i === pts.length - 1 ? accent : "#ffffff55", "stroke-width": 5 }, box);
       const label = el("text", { x: 0, y: 4, "text-anchor": "middle", "dominant-baseline": "middle", fill: "#fff", "font-family": "Inter, Noto Sans Tamil", "font-weight": 900, "font-size": 40 }, box);
       label.textContent = clip(items[i].label, 18);
       if (items[i].note) {
@@ -119,7 +132,7 @@
       label.textContent = clip(it.label, 24);
       const track = el("rect", { x: 150, y: y + 22, width: 780, height: 54, rx: 27, fill: "#ffffff14" }, s.draw);
       const bar = el("rect", { x: 150, y: y + 22, width: 0, height: 54, rx: 27, fill: best ? accent : "#ffffffcc" }, s.draw);
-      const val = el("text", { x: 170, y: y + 62, fill: best ? "#14163a" : "#14163a", "font-family": "Inter, Noto Sans Tamil", "font-weight": 900, "font-size": 32 }, s.draw);
+      const val = el("text", { x: 170, y: y + 62, fill: best ? T.ink : T.ink, "font-family": "Inter, Noto Sans Tamil", "font-weight": 900, "font-size": 32 }, s.draw);
       const at = s.t0 + i * 0.22;
       const proxy = { w: 0 };
       tl.fromTo(label, { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.3, ease: "power3.out" }, at);
@@ -130,7 +143,7 @@
           const tw = val.getComputedTextLength();
           const inside = proxy.w > tw + 50;
           val.setAttribute("x", inside ? 150 + proxy.w - 22 - tw : 150 + proxy.w + 18);
-          val.setAttribute("fill", inside ? "#14163a" : "#ffffff");
+          val.setAttribute("fill", inside ? T.ink : "#ffffff");
         } }, at + 0.1);
       void track;
     });
@@ -147,7 +160,7 @@
     items.forEach((it, i) => {
       const y = top + ((bottom - top) * (i + 0.5)) / items.length;
       const at = s.t0 + 0.2 + i * Math.min(0.7, step);
-      const dot = el("circle", { cx: x, cy: y, r: 22, fill: accent, stroke: "#0b0d1c", "stroke-width": 6 }, s.draw);
+      const dot = el("circle", { cx: x, cy: y, r: 22, fill: accent, stroke: T.deeper, "stroke-width": 6 }, s.draw);
       const ring = el("circle", { cx: x, cy: y, r: 22, fill: "none", stroke: accent, "stroke-width": 4 }, s.draw);
       const year = el("text", { x: x + 64, y: y - 6, fill: accent, "font-family": "Archivo Black, Noto Sans Tamil", "font-size": 62 }, s.draw);
       year.textContent = clip(it.label, 14);
@@ -174,7 +187,7 @@
       const d = ds[i], cx = x + d / 2, cy = base - d / 2;
       x += d + gap;
       const big = i === items.length - 1;
-      const c = el("circle", { cx, cy, r: d / 2, fill: big ? accent : "#7aa2ff", opacity: 0.92 }, s.draw);
+      const c = el("circle", { cx, cy, r: d / 2, fill: big ? accent : T.line, opacity: 0.92 }, s.draw);
       el("circle", { cx: cx - d * 0.15, cy: cy - d * 0.18, r: d * 0.16, fill: "#ffffff", opacity: 0.25 }, s.draw);
       const label = el("text", { x: cx, y: base + 64, "text-anchor": "middle", fill: "#fff", "font-family": "Inter, Noto Sans Tamil", "font-weight": 900, "font-size": 36 }, s.draw);
       label.textContent = clip(it.label, 16);
@@ -185,7 +198,7 @@
     el("line", { x1: 90, y1: base, x2: W - 90, y2: base, stroke: "#ffffff55", "stroke-width": 4 }, s.draw);
     if (items.length > 1 && items[0].v > 0) {
       const bd = ds[ds.length - 1], bx = x - gap - bd / 2, by = base - bd / 2;
-      const ratio = el("text", { x: bx, y: by + bd * 0.12, "text-anchor": "middle", fill: "#14163a", "font-family": "Archivo Black, Noto Sans Tamil", "font-size": Math.max(40, Math.min(110, bd * 0.3)) }, s.draw);
+      const ratio = el("text", { x: bx, y: by + bd * 0.12, "text-anchor": "middle", fill: T.ink, "font-family": "Archivo Black, Noto Sans Tamil", "font-size": Math.max(40, Math.min(110, bd * 0.3)) }, s.draw);
       ratio.textContent = `×${fmt(max / items[0].v)}`;
       tl.fromTo(ratio, { opacity: 0, scale: 0.6, transformOrigin: `${bx}px ${by}px` }, { opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2)" }, s.t0 + items.length * 0.45 + 0.4);
     }
@@ -223,13 +236,13 @@
     const cx = W / 2, cy = 800;
     const sun = el("circle", { cx, cy, r: 90, fill: accent }, s.draw);
     el("circle", { cx, cy, r: 150, fill: accent, opacity: 0.18 }, s.draw);
-    const centre = el("text", { x: cx, y: cy + 12, "text-anchor": "middle", fill: "#14163a", "font-family": "Inter, Noto Sans Tamil", "font-weight": 900, "font-size": 30 }, s.draw);
+    const centre = el("text", { x: cx, y: cy + 12, "text-anchor": "middle", fill: T.ink, "font-family": "Inter, Noto Sans Tamil", "font-weight": 900, "font-size": 30 }, s.draw);
     centre.textContent = clip(shot.anim.variant || "", 10);
     tl.fromTo(sun, { scale: 0, transformOrigin: `${cx}px ${cy}px` }, { scale: 1, duration: 0.6, ease: "back.out(1.7)" }, s.t0 - 0.1);
     items.forEach((it, i) => {
       const r = 180 + i * 78;
       const ring = el("ellipse", { cx, cy, rx: r, ry: r * 0.42, fill: "none", stroke: "#ffffff40", "stroke-width": 3 }, s.draw);
-      const body = el("circle", { r: 20 + (i % 3) * 6, fill: ["#7aa2ff", "#ff9d6e", "#9cf0c0", "#f7a8ff", "#ffffff"][i] }, s.draw);
+      const body = el("circle", { r: 20 + (i % 3) * 6, fill: [T.line, "#ff9d6e", "#9cf0c0", "#f7a8ff", "#ffffff"][i] }, s.draw);
       const label = el("text", { "text-anchor": "middle", fill: "#fff", "font-family": "Inter, Noto Sans Tamil", "font-weight": 900, "font-size": 30 }, s.draw);
       label.textContent = clip(it.label, 14);
       const proxy = { a: (i * 1.3) % (Math.PI * 2) };
@@ -290,8 +303,8 @@
     const lon = (Number(a.lon) || 0) * Math.PI / 180;
     const cx = W / 2, cy = 770, R = 290;
     el("circle", { cx, cy, r: R + 40, fill: accent, opacity: 0.08 }, s.draw);
-    el("circle", { cx, cy, r: R, fill: "#0b1a3f", stroke: "#7aa2ff", "stroke-width": 4 }, s.draw);
-    const lines = el("g", { fill: "none", stroke: "#7aa2ff", "stroke-width": 2.5, opacity: 0.7 }, s.draw);
+    el("circle", { cx, cy, r: R, fill: T.globe, stroke: T.line, "stroke-width": 4 }, s.draw);
+    const lines = el("g", { fill: "none", stroke: T.line, "stroke-width": 2.5, opacity: 0.7 }, s.draw);
     const merid = [], paral = [];
     for (let i = 0; i < 12; i++) merid.push(el("path", {}, lines));
     for (let i = 1; i < 6; i++) paral.push(el("path", {}, lines));
@@ -335,5 +348,8 @@
   }
 
   const BUILDERS = { diagram, chart, timeline, scale, stat, orbit, wave, globe };
-  window.buildAnim = (root, shot, tl, accent) => (BUILDERS[shot.anim.type] || stat)(root, shot, tl, accent || "#ffd21f");
+  window.buildAnim = (root, shot, tl, accent, theme) => {
+    T = THEMES[theme] || THEMES.night;
+    return (BUILDERS[shot.anim.type] || stat)(root, shot, tl, accent || "#ffd21f");
+  };
 })();

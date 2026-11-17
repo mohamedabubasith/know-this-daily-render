@@ -938,8 +938,30 @@ def timeline(film: dict, lengths: list[float]) -> dict:
         nxt = subs[j + 1]["start"] if j + 1 < len(subs) else end_start
         c["end"] = round(min(max(c["end"] + 0.25, c["end"]), nxt - 0.02), 3)
     return {"duration": duration, "endStart": end_start, "hook": "" if film.get("format") == "explainer" else film["hook"],  # an explainer draws its own hook in shot 1
-            "seed": 7, "accent": "#ffd21f", "format": film.get("format", ""),
+            "seed": 7, "accent": ACCENTS[theme_for(film)], "theme": theme_for(film), "format": film.get("format", ""),
             "shots": shots, "subs": subs}
+
+
+THEME_WORDS = {  # topic words -> the animated graphics' colour theme (anim.js THEMES); first match wins
+    "heritage": r"histor|temple|chola|pandya|chera|king|queen|empire|ancient|fort|dynasty|heritage|kallanai|ruins|பழமை|கோயில்|சோழ",
+    "space": r"space|moon|planet|star\b|stars|sun\b|galax|orbit|rocket|astronaut|nasa|isro|நிலா|விண்",
+    "ocean": r"ocean|sea\b|fish|octopus|whale|shark|coral|river|rain|கடல்",
+    "tech": r"\bai\b|artificial|robot|phone|computer|internet|battery|software|machine learning|technology|chip",
+    "nature": r"animal|forest|plant|tree|bird|insect|jungle|flower|nature|snake|elephant|tiger|\bcats?\b|\bdogs?\b",
+}
+ACCENTS = {"night": "#ffd21f", "heritage": "#ffb43a", "ocean": "#3fe0c5", "nature": "#c8f05a", "space": "#ffd21f",
+           "tech": "#2ef0ff", "kids": "#ffd21f"}
+
+
+def theme_for(film: dict) -> str:
+    """The graphics theme that fits the film: kids films are bright, others follow the topic words."""
+    if film.get("for_kids") or film.get("category") == "kids":
+        return "kids"
+    text = " ".join([film.get("title", ""), film.get("en_title", ""), " ".join(film.get("tags", []))]).lower()
+    for name, pat in THEME_WORDS.items():
+        if re.search(pat, text):
+            return name
+    return "night"
 
 
 def mix_audio(film: dict, plan_t: dict, work: Path, out: Path) -> float:

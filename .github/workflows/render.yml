@@ -2,8 +2,8 @@ name: render
 run-name: "render ${{ inputs.job_id }}"
 
 # Started by the Know This Daily studio (or by hand): one shot list in, one finished video out as an artifact.
-# The slow parts run at the same time on separate runners: 5 runners make the voice lines (voice G), 1 makes the
-# pictures; then one runner adds the music and renders, reusing what they made.
+# Everything slow runs at the same time on separate runners:
+#   voice x10 (one line each, voice G) + pictures  ->  prepare (music, timing, shots)  ->  render x4 (stretches)  ->  join
 on:
   workflow_dispatch:
     inputs:
@@ -34,7 +34,8 @@ env:
   SHORTS_CONFIG: ${{ github.workspace }}/.config
   JOB_ID: ${{ inputs.job_id }}
   FILM_GZ_B64: ${{ inputs.film_gz_b64 }}
-  VOICE_PARTS: "5"
+  VOICE_PARTS: "10"
+  RENDER_PARTS: "4"
 
 jobs:
   voice:
@@ -43,24 +44,33 @@ jobs:
     timeout-minutes: 60
     strategy:
       matrix:
-        part: [0, 1, 2, 3, 4]
+        part: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
     env:
       SHORTS_BACKUP_VOICE: "1"
       SHORTS_VOICE_SPACE: ""
     steps:
       - uses: actions/checkout@v4
+      - name: Lines for this runner
+        id: mine
+        run: |
+          n=$(echo "$FILM_GZ_B64" | base64 -d | gunzip | python3 -c "import json,sys; print(len(json.load(sys.stdin)['shots']))")
+          echo "lines=$(( n > ${{ matrix.part }} ? 1 : 0 ))" >> "$GITHUB_OUTPUT"
       - name: ffmpeg
+        if: steps.mine.outputs.lines == '1'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
       - uses: astral-sh/setup-uv@v6
+        if: steps.mine.outputs.lines == '1'
         with:
           enable-cache: true
           cache-dependency-glob: "requirements*.lock"
       - name: Voice model cache
+        if: steps.mine.outputs.lines == '1'
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
           key: indicf5-model-v1
       - name: Python packages and voice G server
+        if: steps.mine.outputs.lines == '1'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
@@ -74,14 +84,15 @@ jobs:
           cd "$HOME/indic" && nohup "$HOME/indic-env/bin/uvicorn" tts_server:app --host 127.0.0.1 --port 8082 > "$HOME/indic/server.log" 2>&1 &
           for i in $(seq 1 60); do curl -sf http://127.0.0.1:8082/ >/dev/null && break; sleep 2; done
           curl -sf http://127.0.0.1:8082/ && echo " voice G server up"
-      - name: Make my voice lines
+      - name: Make my voice line
+        if: steps.mine.outputs.lines == '1'
         run: .venv/bin/python part.py voice ${{ matrix.part }} "$VOICE_PARTS" "job/$JOB_ID"
       - uses: actions/upload-artifact@v4
+        if: steps.mine.outputs.lines == '1'
         with:
           name: voice-${{ matrix.part }}
           path: cache/voice/*.mp3
           retention-days: 1
-          if-no-files-found: ignore
       - name: Voice server log (on failure)
         if: failure()
         run: tail -40 "$HOME/indic/server.log" || true
@@ -113,17 +124,17 @@ jobs:
           retention-days: 1
           if-no-files-found: ignore
 
-  render:
+  prepare:
     needs: [voice, pictures]
     if: ${{ !cancelled() && needs.pictures.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.voice.result) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-      - name: System packages (ffmpeg, music, Tamil font)
+      - name: System packages (ffmpeg, music)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg fluidsynth fluid-soundfont-gm fonts-noto-core >/dev/null
+          sudo apt-get install -y -qq ffmpeg fluidsynth fluid-soundfont-gm >/dev/null
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -131,24 +142,18 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: "requirements*.lock"
-      - name: Python packages
-        run: uv venv --python 3.13 .venv && uv pip install --python .venv -r requirements.lock
-      - name: Cache HyperFrames and Chrome
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.npm
-            ~/.cache/hyperframes
-            ~/.cache/puppeteer
-          key: hyperframes-0.9.40-${{ runner.os }}
-      - name: Claude Code (only drawn explainer films use it)
-        run: npm install -g @anthropic-ai/claude-code >/dev/null 2>&1 || true
-      - name: Secrets to files
+      - name: Python packages and secrets
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
+          uv venv --python 3.13 .venv && uv pip install --python .venv -r requirements.lock
           mkdir -p "$SHORTS_CONFIG" && chmod 700 "$SHORTS_CONFIG"
           [ -n "$HF_TOKEN" ] && printf '%s' "$HF_TOKEN" > "$SHORTS_CONFIG/hf-token" || true
+          npm install -g @anthropic-ai/claude-code >/dev/null 2>&1 || true
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-hyperframes-0.9.40-${{ runner.os }}
       - name: Voice lines from the voice runners
         if: inputs.voice == 'g'
         uses: actions/download-artifact@v4
@@ -161,14 +166,90 @@ jobs:
         with:
           name: pictures
           path: cache/pictures
-      - name: Music and render
+      - name: Prepare the film
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           SHORTS_VOICE_SPACE: ${{ inputs.voice == 'kayal' && secrets.SHORTS_VOICE_SPACE || '' }}
           SHORTS_BACKUP_VOICE: ${{ inputs.voice == 'g' && '1' || '' }}
         run: |
           echo "voice lines ready: $(ls cache/voice 2>/dev/null | wc -l), pictures ready: $(ls cache/pictures | wc -l)"
-          .venv/bin/python render.py "job/$JOB_ID"
+          .venv/bin/python part.py prepare "job/$JOB_ID"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: project
+          path: |
+            job/${{ inputs.job_id }}/project/
+            job/${{ inputs.job_id }}/prepared.json
+            !job/${{ inputs.job_id }}/project/node_modules/
+          retention-days: 1
+          include-hidden-files: false
+
+  render:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        part: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - name: System packages (ffmpeg, Tamil font)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-noto-core >/dev/null
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "requirements*.lock"
+      - name: Python packages
+        run: uv venv --python 3.13 .venv && uv pip install --python .venv -r requirements.lock
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/hyperframes
+            ~/.cache/puppeteer
+          key: hyperframes-0.9.40-${{ runner.os }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: project
+          path: job/${{ inputs.job_id }}
+      - name: Render my stretch
+        run: .venv/bin/python part.py chunk ${{ matrix.part }} "$RENDER_PARTS" "job/$JOB_ID"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chunk-${{ matrix.part }}
+          path: job/${{ inputs.job_id }}/chunk-${{ matrix.part }}.mp4
+          retention-days: 1
+
+  join:
+    needs: render
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "requirements*.lock"
+      - name: Python packages
+        run: uv venv --python 3.13 .venv && uv pip install --python .venv -r requirements.lock
+      - uses: actions/download-artifact@v4
+        with:
+          name: project
+          path: job/${{ inputs.job_id }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: chunk-*
+          path: job/${{ inputs.job_id }}
+          merge-multiple: true
+      - name: Join the stretches
+        run: |
+          echo "$FILM_GZ_B64" | base64 -d | gunzip > "job/$JOB_ID/film.json"
+          .venv/bin/python part.py join "$RENDER_PARTS" "job/$JOB_ID"
       - name: Keep the result
         if: always()
         uses: actions/upload-artifact@v4

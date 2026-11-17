@@ -205,7 +205,7 @@ __SHOTS__
 
       // ---- Animated scenes ----
       F.shots.forEach((s, i) => {
-        if (s.kind === "anim") window.buildAnim(q(`#anim-${i}`), s, tl, F.accent);
+        if (s.kind === "anim") window.buildAnim(q(`#anim-${i}`), s, tl, F.accent, F.theme);
       });
       gsap.set("#flash", { opacity: 0 });
 
