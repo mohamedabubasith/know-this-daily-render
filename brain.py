@@ -177,11 +177,18 @@ def captions_srt(film: dict, timed: dict, words: int = 8) -> str:
     return "\n".join(f"{i}\n{ts(x)} --> {ts(y)}\n{text}\n" for i, (x, y, text) in enumerate(cues, 1))
 
 
+def timing(project: Path) -> dict:
+    """Each line's voice times: assets/film.js for a picture film, timing.json for a drawn explainer."""
+    if (project / "timing.json").exists():
+        return json.loads((project / "timing.json").read_text())
+    js = (project / "assets/film.js").read_text()
+    return json.loads(js[js.index("{"):js.rindex("}") + 1])
+
+
 def done(job: Path) -> None:
     f = json.loads((job / "film.json").read_text())
     facts = json.loads((job / "facts.json").read_text())
-    js = (job / "project/assets/film.js").read_text()
-    caps = captions_srt(f, json.loads(js[js.index("{"):js.rindex("}") + 1]))
+    caps = captions_srt(f, timing(job / "project"))
     lib = {"said": " ".join(re.sub(r"\*", "", s.get("en", "")) for s in f.get("shots", [])),
            "series": f.get("series") or "", "part": int(f.get("part") or 1), "category": f.get("category") or "",
            "format": f.get("format", "")}
