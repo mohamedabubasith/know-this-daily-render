@@ -163,12 +163,19 @@ jobs:
         part: [0, 1, 2]
     steps:
       - uses: actions/checkout@v4
-      - name: System packages (cached)
-        uses: awalsh128/cache-apt-pkgs-action@v1.5.3
+      - name: ffmpeg cache
+        uses: actions/cache@v4
         with:
-          packages: ffmpeg
-          version: "1"
-          execute_install_scripts: true
+          path: ~/ffmpeg-static
+          key: ffmpeg-static-btbn-n8.1-v1
+      - name: ffmpeg (one self-contained build, needs no system libraries)
+        run: |
+          if [ ! -x "$HOME/ffmpeg-static/bin/ffmpeg" ]; then
+            mkdir -p "$HOME/ffmpeg-static"
+            curl -fsSL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz | tar -xJ --strip-components=1 -C "$HOME/ffmpeg-static"
+          fi
+          echo "$HOME/ffmpeg-static/bin" >> "$GITHUB_PATH"
+          "$HOME/ffmpeg-static/bin/ffmpeg" -hide_banner -version | head -1
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
@@ -214,12 +221,21 @@ jobs:
       FILM_GZ_B64: ${{ needs.script.outputs.film }}
     steps:
       - uses: actions/checkout@v4
-      - name: System packages (cached)
-        uses: awalsh128/cache-apt-pkgs-action@v1.5.3
+      - name: ffmpeg cache
+        uses: actions/cache@v4
         with:
-          packages: ffmpeg fluidsynth fluid-soundfont-gm
-          version: "1"
-          execute_install_scripts: true
+          path: ~/ffmpeg-static
+          key: ffmpeg-static-btbn-n8.1-v1
+      - name: ffmpeg (one self-contained build, needs no system libraries)
+        run: |
+          if [ ! -x "$HOME/ffmpeg-static/bin/ffmpeg" ]; then
+            mkdir -p "$HOME/ffmpeg-static"
+            curl -fsSL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz | tar -xJ --strip-components=1 -C "$HOME/ffmpeg-static"
+          fi
+          echo "$HOME/ffmpeg-static/bin" >> "$GITHUB_PATH"
+          "$HOME/ffmpeg-static/bin/ffmpeg" -hide_banner -version | head -1
+      - name: System packages
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends fluidsynth fluid-soundfont-gm >/dev/null
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -287,12 +303,21 @@ jobs:
           STUDIO_URL: ${{ secrets.STUDIO_URL }}
         run: |
           curl -fsS -m 20 -X POST "$STUDIO_URL?p=/gh/render" -H 'Content-Type: application/json' -d "{\"job\":\"$JOB_ID\",\"step\":\"render\"}" >/dev/null || true
-      - name: System packages (cached)
-        uses: awalsh128/cache-apt-pkgs-action@v1.5.3
+      - name: ffmpeg cache
+        uses: actions/cache@v4
         with:
-          packages: ffmpeg fonts-noto-core
-          version: "1"
-          execute_install_scripts: true
+          path: ~/ffmpeg-static
+          key: ffmpeg-static-btbn-n8.1-v1
+      - name: ffmpeg (one self-contained build, needs no system libraries)
+        run: |
+          if [ ! -x "$HOME/ffmpeg-static/bin/ffmpeg" ]; then
+            mkdir -p "$HOME/ffmpeg-static"
+            curl -fsSL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz | tar -xJ --strip-components=1 -C "$HOME/ffmpeg-static"
+          fi
+          echo "$HOME/ffmpeg-static/bin" >> "$GITHUB_PATH"
+          "$HOME/ffmpeg-static/bin/ffmpeg" -hide_banner -version | head -1
+      - name: System packages
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends fonts-noto-core >/dev/null
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -334,12 +359,19 @@ jobs:
           STUDIO_URL: ${{ secrets.STUDIO_URL }}
         run: |
           curl -fsS -m 20 -X POST "$STUDIO_URL?p=/gh/render" -H 'Content-Type: application/json' -d "{\"job\":\"$JOB_ID\",\"step\":\"preview\"}" >/dev/null || true
-      - name: System packages (cached)
-        uses: awalsh128/cache-apt-pkgs-action@v1.5.3
+      - name: ffmpeg cache
+        uses: actions/cache@v4
         with:
-          packages: ffmpeg
-          version: "1"
-          execute_install_scripts: true
+          path: ~/ffmpeg-static
+          key: ffmpeg-static-btbn-n8.1-v1
+      - name: ffmpeg (one self-contained build, needs no system libraries)
+        run: |
+          if [ ! -x "$HOME/ffmpeg-static/bin/ffmpeg" ]; then
+            mkdir -p "$HOME/ffmpeg-static"
+            curl -fsSL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz | tar -xJ --strip-components=1 -C "$HOME/ffmpeg-static"
+          fi
+          echo "$HOME/ffmpeg-static/bin" >> "$GITHUB_PATH"
+          "$HOME/ffmpeg-static/bin/ffmpeg" -hide_banner -version | head -1
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
