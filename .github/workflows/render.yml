@@ -51,6 +51,7 @@ jobs:
     timeout-minutes: 30
     outputs:
       film: ${{ steps.film.outputs.film }}
+      format: ${{ steps.film.outputs.format }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
@@ -76,6 +77,7 @@ jobs:
         run: |
           python3 brain.py film "${{ inputs.req }}" "job/$JOB_ID"
           echo "film=$(gzip -c "job/$JOB_ID/film.json" | base64 -w0)" >> "$GITHUB_OUTPUT"
+          echo "format=$(python3 -c "import json; print(json.load(open('job/$JOB_ID/film.json')).get('format', ''))")" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.job_id }}-film
@@ -214,9 +216,66 @@ jobs:
           retention-days: 1
           if-no-files-found: ignore
 
+  draw:
+    needs: script
+    if: needs.script.outputs.format == 'explainer'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      FILM_GZ_B64: ${{ needs.script.outputs.film }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: ffmpeg cache
+        uses: actions/cache@v4
+        with:
+          path: ~/ffmpeg-static
+          key: ffmpeg-static-btbn-n8.1-v1
+      - name: ffmpeg (one self-contained build, needs no system libraries)
+        run: |
+          if [ ! -x "$HOME/ffmpeg-static/bin/ffmpeg" ]; then
+            mkdir -p "$HOME/ffmpeg-static"
+            curl -fsSL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz | tar -xJ --strip-components=1 -C "$HOME/ffmpeg-static"
+          fi
+          echo "$HOME/ffmpeg-static/bin" >> "$GITHUB_PATH"
+          "$HOME/ffmpeg-static/bin/ffmpeg" -hide_banner -version | head -1
+      - name: System packages
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends fluidsynth fluid-soundfont-gm >/dev/null
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          prune-cache: false  # keep the downloaded wheels (PyTorch and friends) for the next run
+          cache-dependency-glob: "requirements*.lock"
+      - name: Python packages and secrets
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          uv venv --python 3.13 .venv && uv pip install --python .venv -r requirements.lock
+          mkdir -p "$SHORTS_CONFIG" && chmod 700 "$SHORTS_CONFIG"
+          [ -n "$HF_TOKEN" ] && printf '%s' "$HF_TOKEN" > "$SHORTS_CONFIG/hf-token" || true
+          npm install -g @anthropic-ai/claude-code >/dev/null 2>&1 || true
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-hyperframes-0.9.40-${{ runner.os }}
+      - name: Draw the scenes (Claude, while the voice is made)
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: .venv/bin/python part.py draw "job/$JOB_ID"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: drawn
+          path: |
+            job/${{ inputs.job_id }}/project/
+            !job/${{ inputs.job_id }}/project/node_modules/
+          retention-days: 1
+          include-hidden-files: true
+
   prepare:
-    needs: [script, voice, pictures]
-    if: ${{ !cancelled() && needs.pictures.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.voice.result) }}
+    needs: [script, voice, pictures, draw]
+    if: ${{ !cancelled() && needs.script.result == 'success' && needs.pictures.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.voice.result) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -271,6 +330,12 @@ jobs:
           pattern: pictures-*
           path: cache/pictures
           merge-multiple: true
+      - name: Scenes drawn during the voice (explainer)
+        if: needs.draw.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: drawn
+          path: job/${{ inputs.job_id }}/project
       - name: Prepare the film
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -412,7 +477,7 @@ jobs:
         run: .venv/bin/python brain.py done "job/$JOB_ID"
 
   report:
-    needs: [script, voice, pictures, prepare, render, join]
+    needs: [script, voice, pictures, draw, prepare, render, join]
     if: always() && needs.join.result != 'success'
     runs-on: ubuntu-24.04
     steps:

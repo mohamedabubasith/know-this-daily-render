@@ -3,6 +3,7 @@
   python part.py mine K N JOB_DIR     1 if voice runner K of N has sentences to make, else 0
   python part.py voice K N JOB_DIR    voice runner K's sentences (voice G, IndicF5 on this runner), to cache/pieces
   python part.py pictures K N JOB_DIR the pictures of shots K, K+N, K+2N, ...
+  python part.py draw JOB_DIR         an explainer's scenes, drawn by Claude to estimated timing while the voice is made
   python part.py prepare JOB_DIR      the HyperFrames project (timing, music, shots), from the lines and pictures
   python part.py chunk K N JOB_DIR    render stretch K of N of the film to JOB_DIR/chunk-K.mp4
   python part.py join N JOB_DIR       stitch the stretches, lay the one soundtrack over them, check, preview
@@ -128,6 +129,22 @@ elif kind == "pictures":
     # Other runners' shots count as animated here, so every shot keeps its own index and picture seed.
     shots = [s if i % n == k else {**s, "kind": "anim"} for i, s in enumerate(film["shots"])]
     print("pictures:", p.pictures({**film, "shots": shots}, work, cache / "pictures"), flush=True)
+
+elif kind == "draw":
+    # The scenes read their clock from timing.json, so they are drawn now to estimated line lengths (voice G speaks
+    # about 11 letters a second, plus each sentence's pause) and prepare rewrites timing.json with the real ones.
+    lengths = [len(s["ta"]) / 11 + sum(z for _, z in sentences(s["ta"])) for s in film["shots"]]
+    plan_t = p.timeline(film, lengths)
+
+    def quiet(film_, plan_, work_, out):  # no voice yet: a silent track of the right length for Claude's frame checks
+        p.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", f"{plan_['duration']:.2f}",
+               "-b:a", "96k", str(out)], "silence")
+        return plan_["duration"]
+
+    p.mix_audio = quiet
+    t = time.monotonic()
+    usage = p.author_film(film, plan_t, work, project, lambda s: print("step:", s, flush=True))
+    print(f"drawn in {(time.monotonic() - t) / 60:.1f} min", flush=True)
 
 elif kind == "prepare":
     t = time.monotonic()
