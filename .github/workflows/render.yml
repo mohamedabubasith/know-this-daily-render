@@ -95,12 +95,8 @@ jobs:
       SHORTS_VOICE_SPACE: ""
     steps:
       - uses: actions/checkout@v4
-      - name: System packages (cached)
-        uses: awalsh128/cache-apt-pkgs-action@v1.5.3
-        with:
-          packages: ffmpeg
-          version: "1"
-          execute_install_scripts: true
+      - name: ffmpeg, full install (the voice model loads its libraries; runs while Claude writes the script)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
