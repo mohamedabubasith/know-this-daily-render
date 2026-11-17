@@ -22,8 +22,19 @@ Tamil words in total (more only if the owner's instructions ask for a longer vid
 - Write it the way a voice-over artist reads it aloud, so the voice sounds human: short sentences; a comma where a
   narrator would take a breath; "..." before a reveal; numbers and years written as Tamil words (இருபத்தேழு, not 27;
   ஆயிரத்து தொள்ளாயிரத்து அறுபத்தொன்பது, not 1969); English words that Tamil speakers use written in Tamil script
-  as they say them (நாசா, டிஎன்ஏ, வைஃபை, யூபிஐ), never in English letters; no symbols like %, km, $ (write
+  as they say them (நாசா, டி என் ஏ, வைஃபை, யூ பி ஐ), never in English letters; no symbols like %, km, $ (write
   சதவீதம், கிலோமீட்டர், டாலர்).
+- The narrator is a text-to-speech voice. It stumbles on long joined words, rare words and heavy slang, and says
+  them too fast or wrong. Write every line so it cannot go wrong:
+  - at most 10 words per sentence, at most 2 sentences per shot;
+  - common everyday words a child knows; no rare literary or Sanskrit-heavy words when a simple word exists;
+  - no long joined words: split compounds and suffix chains into separate words (மாம்பழ படங்கள், not
+    மாம்பழப்படங்கள்; அதை பார்க்கும், not அதைப்பார்க்கும்); a word of more than 5 syllables is a warning sign;
+  - light spoken Tamil with full word forms (இருக்கு, பார்க்கலாம், செய்யும்), no clipped slang endings;
+  - never fix a quote ending or a case ending onto an English word (not பிக்சல்னு, AI-க்கு): rephrase
+    (இதன் பெயர் பிக்சல்; ஏ ஐ மாடலுக்கு);
+  - English letters and acronyms are spelt as spoken, letter by letter with spaces (ஏ ஐ, டி என் ஏ, யூ பி ஐ),
+    never in English letters; no hyphens, brackets, quotes, emoji or symbols in this field.
 Shot 1 is the hook (a question or a surprise); the last shot gives the takeaway and asks viewers to follow for one
 new thing every day.
 Subtitles (field `en`): natural spoken English for the same line (the English version of the video speaks it); mark
@@ -41,7 +52,7 @@ Film fields:
 - title: max 90 characters: a short Tamil phrase in Tamil script, then " | ", then the English hook.
 - description: 2 to 4 lines: a Tamil sentence, an English sentence, then "Follow Know This Daily for one new thing
   every day."
-- hashtags: 6 to 10, with #shorts, #tamil, #knowthisdaily, plus topic tags such as #explained, #science, #tech.
+- hashtags: exactly 5 to 6, in this order: #shorts, #tamil, 2 or 3 specific topic tags that people really search for this exact subject (not broad words like #ai, #facts, #explained, #tech, #learn), then #knowthisdaily.
 - tags: 8 to 15 plain keywords in English and Tamil.
 - en_title, en_description, en_hashtags: the English video's title (no Tamil script), 2 to 3 English lines ending
   with the follow line, and 6 to 10 English hashtags with #shorts and #knowthisdaily, no Tamil tags.

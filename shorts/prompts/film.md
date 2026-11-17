@@ -6,7 +6,18 @@ The plan's `category` sets the feel of the whole film: education = clear, calm, 
 
 Narration (field `ta`):
 - Natural, warm, spoken Tamil in Tamil script, the way a great Tamil storyteller talks, not textbook Tamil.
-- Write it the way a voice-over artist reads it aloud, so the voice sounds human: short sentences; a comma where a narrator would take a breath; "..." before a reveal; numbers and years written as Tamil words (இருபத்தேழு, not 27; ஆயிரத்து தொள்ளாயிரத்து அறுபத்தொன்பது, not 1969); English words that Tamil speakers use written in Tamil script as they say them (நாசா, டிஎன்ஏ, வைஃபை, யூபிஐ), never in English letters; no symbols like %, km, $ (write சதவீதம், கிலோமீட்டர், டாலர்).
+- Write it the way a voice-over artist reads it aloud, so the voice sounds human: short sentences; a comma where a narrator would take a breath; "..." before a reveal; numbers and years written as Tamil words (இருபத்தேழு, not 27; ஆயிரத்து தொள்ளாயிரத்து அறுபத்தொன்பது, not 1969); English words that Tamil speakers use written in Tamil script as they say them (நாசா, டி என் ஏ, வைஃபை, யூ பி ஐ), never in English letters; no symbols like %, km, $ (write சதவீதம், கிலோமீட்டர், டாலர்).
+- The narrator is a text-to-speech voice. It stumbles on long joined words, rare words and heavy slang, and says
+  them too fast or wrong. Write every line so it cannot go wrong:
+  - at most 10 words per sentence, at most 2 sentences per shot;
+  - common everyday words a child knows; no rare literary or Sanskrit-heavy words when a simple word exists;
+  - no long joined words: split compounds and suffix chains into separate words (மாம்பழ படங்கள், not
+    மாம்பழப்படங்கள்; அதை பார்க்கும், not அதைப்பார்க்கும்); a word of more than 5 syllables is a warning sign;
+  - light spoken Tamil with full word forms (இருக்கு, பார்க்கலாம், செய்யும்), no clipped slang endings;
+  - never fix a quote ending or a case ending onto an English word (not பிக்சல்னு, AI-க்கு): rephrase
+    (இதன் பெயர் பிக்சல்; ஏ ஐ மாடலுக்கு);
+  - English letters and acronyms are spelt as spoken, letter by letter with spaces (ஏ ஐ, டி என் ஏ, யூ பி ஐ),
+    never in English letters; no hyphens, brackets, quotes, emoji or symbols in this field.
 - One or two short sentences per shot, about 4 to 6 seconds when spoken at a calm pace. The whole film 65 to 85 Tamil words in total (unless the owner's instructions ask for a longer video): the narrator speaks slowly and clearly, with pauses. Cut, do not cram.
 - Shot 1 is the hook: a question or shocking fact that stops the scroll. The last shot is the payoff and ends with a short line inviting viewers to follow for one new thing every day.
 - Only well-established facts. If unsure of a number, round it safely.
@@ -57,7 +68,7 @@ Film fields:
 - hook: 2 to 6 English words shown big on screen over shot 1; the last word is highlighted.
 - title: the YouTube title, max 90 characters: a short Tamil phrase in Tamil script, then " | ", then the English hook. Curious, not clickbait lies.
 - description: 2 to 4 lines. A Tamil sentence, an English sentence summarising the fact, then "Follow Know This Daily for one new thing every day."
-- hashtags: 6 to 10, each starting with #, always including #shorts, #tamil, #knowthisdaily, plus topic tags (for kids stories use the popular children's tags: #kidsstory, #storiesforkids, #bedtimestories, #moralstories, #tamilstories, #tamilkidsstory, #kidsvideos, #cartoon, #storytime, plus one tag for the story's hero or theme). Kids stories move fast: a new shot every 3 to 4 seconds, lively happy voice, the hero on screen in shot 1.
+- hashtags: exactly 5 to 6, in this order: #shorts, #tamil, 2 or 3 specific topic tags that people really search for this exact subject (the main subject's name or the precise question, not broad words like #ai, #facts, #explained, #tech, #learn), then #knowthisdaily. For kids stories use #kidsstory and #storiesforkids as the topic tags.
 - tags: 8 to 15 plain keywords in English and Tamil for YouTube search.
 - English version: the same film is also published narrated in English (the `en` lines are spoken), for viewers
   outside Tamil Nadu. Write every `en` line as natural spoken English, not a word-for-word translation.

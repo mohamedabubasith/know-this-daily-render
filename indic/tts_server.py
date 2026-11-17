@@ -107,7 +107,7 @@ def _speed(rate: str) -> float:
 
 # The narrator's pace and breaths. The owner found 1.0 too fast for a Tamil voice-over. Changing these changes the
 # voice, so VOICE_VERSION goes into every line's id and old lines are not reused.
-PACE = float(os.environ.get("INDIC_PACE", "0.85"))
+PACE = float(os.environ.get("INDIC_PACE", "0.80"))  # 0.85 still rushed words (owner, 2026-11-18)
 BREATH = {".": 0.42, "!": 0.42, "?": 0.48, "…": 0.6, "...": 0.6}  # silence after each sentence, like a voice-over artist
 # The reference clip is part of the voice too (2026-11-17: the owner chose sample G, the Rasa storytelling clip).
 _REF_ID = hashlib.sha1((INDIC / "ref.wav").read_bytes()).hexdigest()[:8] if (INDIC / "ref.wav").exists() else "none"
