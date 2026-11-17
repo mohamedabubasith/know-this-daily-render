@@ -12,7 +12,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+      - name: ffmpeg (self-contained)
+        run: |
+          mkdir -p ~/ff && curl -fsSL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz | tar -xJ --strip-components=1 -C ~/ff
+          echo "$HOME/ff/bin" >> "$GITHUB_PATH"
       - name: pocket
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -24,49 +27,16 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with: {name: pocket, path: out/, if-no-files-found: ignore}
-  rasa:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
-      - name: rasa
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          uv venv -q --python 3.12 .e && uv pip install -q --python .e torch --index-url https://download.pytorch.org/whl/cpu
-          uv pip install -q --python .e 'transformers<4.50' soundfile huggingface_hub
-          .e/bin/python voicetest/models.py rasa voicetest/p4lines.txt out
-          voicetest/join.sh rasa
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with: {name: rasa, path: out/, if-no-files-found: ignore}
-  kuyil:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
-      - name: kuyil
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          git clone -q --depth 1 https://github.com/zhagaramlabs/kuyil ~/kuyil
-          uvx --from huggingface_hub hf download zhagaramlabs/kuyil-5m --local-dir ~/kuyil/kuyil-5m >/dev/null
-          (cd ~/kuyil && uv sync -q && uv run --with soundfile python "$GITHUB_WORKSPACE/voicetest/models.py" kuyil "$GITHUB_WORKSPACE/voicetest/p4lines.txt" "$GITHUB_WORKSPACE/out")
-          voicetest/join.sh kuyil
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with: {name: kuyil, path: out/, if-no-files-found: ignore}
   spring:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+      - name: ffmpeg (self-contained)
+        run: |
+          mkdir -p ~/ff && curl -fsSL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz | tar -xJ --strip-components=1 -C ~/ff
+          echo "$HOME/ff/bin" >> "$GITHUB_PATH"
       - name: spring
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -84,7 +54,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+      - name: ffmpeg (self-contained)
+        run: |
+          mkdir -p ~/ff && curl -fsSL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz | tar -xJ --strip-components=1 -C ~/ff
+          echo "$HOME/ff/bin" >> "$GITHUB_PATH"
       - name: piper
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -97,22 +70,3 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with: {name: piper, path: out/, if-no-files-found: ignore}
-  zonos3:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
-      - name: zonos3
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          git clone -q --depth 1 --recurse-submodules --shallow-submodules https://github.com/Zyphra/ZONOS3-Mini.git ~/z
-          (cd ~/z/servers/ggml && cmake -B build -DCMAKE_BUILD_TYPE=Release >/dev/null && cmake --build build -j4 2>&1 | tail -1 && uvx --from huggingface_hub hf download Zyphra/ZONOS3-Mini gguf/backbone-ptq.gguf gguf/zac-keep2.gguf gguf/spk-encoder.gguf --local-dir . >/dev/null)
-          mkdir -p out; n=0
-          while IFS= read -r line; do n=$((n+1)); ~/z/servers/ggml/build/zonos3-cli ~/z/servers/ggml/gguf/backbone-ptq.gguf --tts "$line" out/zonos3-line$n.wav --clone voicetest/kayal.mp3 --seed 1 >/dev/null 2>&1; done < voicetest/p4lines.txt
-          voicetest/join.sh zonos3
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with: {name: zonos3, path: out/, if-no-files-found: ignore}
