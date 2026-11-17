@@ -1,0 +1,38 @@
+name: voice-test
+# Tamil voice samples on a plain CPU runner (no GPU), for the owner to compare. Runs on pushes to the voice-test branch.
+on:
+  push:
+    branches: [voice-test]
+permissions:
+  contents: read
+jobs:
+  zonos3:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+      - name: ZONOS3-Mini
+        run: |
+          git clone -q --depth 1 https://github.com/Zyphra/ZONOS3-Mini.git "$HOME/z"
+          cd "$HOME/z" && uv run --package zonos3 python "$GITHUB_WORKSPACE/voicetest/zonos.py" "$GITHUB_WORKSPACE/voicetest" "$GITHUB_WORKSPACE/out"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: zonos3, path: out/, if-no-files-found: ignore}
+  omnivoice:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+      - name: OmniVoice
+        run: |
+          uv venv --python 3.12 .ov
+          uv pip install --python .ov torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+          uv pip install --python .ov omnivoice soundfile
+          .ov/bin/python voicetest/omni.py voicetest out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: omnivoice, path: out/, if-no-files-found: ignore}
