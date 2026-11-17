@@ -100,7 +100,6 @@ jobs:
           enable-cache: true
           prune-cache: false  # keep the downloaded wheels (PyTorch and friends) for the next run
           cache-dependency-glob: "requirements*.lock"
-          cache-suffix: pocket-voice  # its own uv cache, so the PyTorch and pocket-tts wheels are kept too
       - name: Voice model cache
         uses: actions/cache@v4
         with:
