@@ -31,7 +31,7 @@
   // Colour themes, picked from the film's topic (pipeline.theme_for), so every film does not look the same.
   // deep/deeper: background; cool: second glow; box: card fill; ink: dark text on light bars; line: strokes; globe: sea.
   const THEMES = {
-    night:    { deep: "#0d1030", deeper: "#05060f", cool: T.cool, box: T.box, ink: T.ink, line: T.line, globe: T.globe },
+    night:    { deep: "#0d1030", deeper: "#05060f", cool: "#5b7cff", box: "#11163a", ink: "#14163a", line: "#7aa2ff", globe: "#0b1a3f" },
     heritage: { deep: "#3b1d0e", deeper: "#120703", cool: "#d9893f", box: "#4a2512", ink: "#2b1308", line: "#f0b878", globe: "#2c1709" },
     ocean:    { deep: "#06303a", deeper: "#021015", cool: "#27c2d8", box: "#0a3b47", ink: "#06262e", line: "#7fe3f0", globe: "#063a4a" },
     nature:   { deep: "#12301a", deeper: "#050f07", cool: "#6ccf6f", box: "#173d22", ink: "#0f2414", line: "#a6e8a0", globe: "#0f3a1e" },
