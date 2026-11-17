@@ -29,6 +29,8 @@ STOP = set("the and for with that this what about make video videos part next fr
 
 def studio(path: str, body: dict | None = None) -> dict:
     """GET (no body) or POST to the studio API. path is like /gh/input&req=ID (query joined with &)."""
+    if path == "/gh/render" and body is not None:  # which run reports: the studio ignores a replaced run
+        body = {**body, "run": os.environ.get("GITHUB_RUN_ID", "")}
     req = urllib.request.Request(f"{STUDIO}?p={path}", method="POST" if body is not None else "GET",
                                  data=json.dumps(body, ensure_ascii=False).encode() if body is not None else None,
                                  headers={"Content-Type": "application/json", "User-Agent": "know-this-daily-runner"})
