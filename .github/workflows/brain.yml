@@ -1,0 +1,33 @@
+name: brain
+run-name: "brain ${{ inputs.req }}"
+
+# Started by the studio (n8n) for Claude's desk work: a plan, a plan edit, or ideas from the channel stats.
+# The request is fetched from the studio and the answer sent back to it, so nothing about it shows in this public run.
+on:
+  workflow_dispatch:
+    inputs:
+      req:
+        description: "Studio request id"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  think:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-claude-${{ runner.os }}
+      - name: Claude Code
+        run: npm install -g @anthropic-ai/claude-code >/dev/null 2>&1
+      - name: Think
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          STUDIO_URL: ${{ secrets.STUDIO_URL }}
+        run: python3 brain.py "${{ inputs.req }}"

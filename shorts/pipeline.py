@@ -33,6 +33,7 @@ CONFIG = Path(os.environ.get("SHORTS_CONFIG", Path.home() / ".config/shorts"))
 MODEL = os.environ.get("SHORTS_MODEL", "sonnet")
 PLAN_MODEL = os.environ.get("SHORTS_PLAN_MODEL", "sonnet")  # Haiku followed the rules over the owner's words
 HYPERFRAMES = os.environ.get("SHORTS_HYPERFRAMES", "hyperframes@0.9.40")
+RENDER = os.environ.get("SHORTS_RENDER", "local")  # "github": videos are made by the public render repo's Actions
 W, H = 1080, 1920
 
 MOODS = ["mysterious", "dramatic", "happy", "sad", "excited", "calm", "curious", "epic", "tense"]

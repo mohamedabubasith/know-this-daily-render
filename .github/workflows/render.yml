@@ -1,19 +1,26 @@
 name: render
 run-name: "render ${{ inputs.job_id }}"
 
-# Started by the Know This Daily studio (or by hand): one shot list in, one finished video out as an artifact.
+# Started by the Know This Daily studio (n8n): one approved plan in, one finished video out as artifacts.
+# The plan is fetched from the studio by request id, so nothing about it shows in this public run's inputs.
 # Everything slow runs at the same time on separate runners:
-#   voice x10 (one line each, voice G) + pictures  ->  prepare (music, timing, shots)  ->  render x4 (stretches)  ->  join
+#   script (Claude writes the shot list) -> voice x10 (voice G) + pictures -> prepare (music, timing, shots)
+#   -> render x4 (stretches) -> join -> the studio is told; on any failure the report job tells it why
 on:
   workflow_dispatch:
     inputs:
       job_id:
-        description: "Studio job id (names the run and the artifact)"
+        description: "Studio job id (names the run and the artifacts)"
         required: true
         type: string
-      film_gz_b64:
-        description: "film.json, gzipped then base64"
+      req:
+        description: "Studio request id: the plan, or the change for an edit"
         required: true
+        type: string
+      prev_run:
+        description: "The job's last render run, whose shot list an edit or a retry starts from"
+        required: false
+        default: ""
         type: string
       voice:
         description: "g = IndicF5 with the storytelling clip, on these runners' CPUs; kayal = Maya 2 on the HF GPU Space"
@@ -24,6 +31,7 @@ on:
 
 permissions:
   contents: read
+  actions: read  # the last run's shot list, for an edit or a retry
 
 concurrency:
   group: render-${{ inputs.job_id }}
@@ -33,12 +41,48 @@ env:
   HYPERFRAMES_NO_TELEMETRY: "1"
   SHORTS_CONFIG: ${{ github.workspace }}/.config
   JOB_ID: ${{ inputs.job_id }}
-  FILM_GZ_B64: ${{ inputs.film_gz_b64 }}
   VOICE_PARTS: "10"
   RENDER_PARTS: "4"
 
 jobs:
+  script:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      film: ${{ steps.film.outputs.film }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-claude-${{ runner.os }}
+      - name: Claude Code
+        run: npm install -g @anthropic-ai/claude-code >/dev/null 2>&1
+      - name: The last shot list (edit or retry)
+        if: inputs.prev_run != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.job_id }}-film
+          run-id: ${{ inputs.prev_run }}
+          github-token: ${{ github.token }}
+          path: prev
+      - name: Write the shot list
+        id: film
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          STUDIO_URL: ${{ secrets.STUDIO_URL }}
+        run: |
+          python3 brain.py film "${{ inputs.req }}" "job/$JOB_ID"
+          echo "film=$(gzip -c "job/$JOB_ID/film.json" | base64 -w0)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.job_id }}-film
+          path: job/${{ inputs.job_id }}/film.json
+          retention-days: 30
+
   voice:
+    needs: script
     if: inputs.voice == 'g'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -46,6 +90,7 @@ jobs:
       matrix:
         part: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
     env:
+      FILM_GZ_B64: ${{ needs.script.outputs.film }}
       SHORTS_BACKUP_VOICE: "1"
       SHORTS_VOICE_SPACE: ""
     steps:
@@ -98,8 +143,11 @@ jobs:
         run: tail -40 "$HOME/indic/server.log" || true
 
   pictures:
+    needs: script
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    env:
+      FILM_GZ_B64: ${{ needs.script.outputs.film }}
     steps:
       - uses: actions/checkout@v4
       - name: ffmpeg
@@ -125,10 +173,12 @@ jobs:
           if-no-files-found: ignore
 
   prepare:
-    needs: [voice, pictures]
+    needs: [script, voice, pictures]
     if: ${{ !cancelled() && needs.pictures.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.voice.result) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    env:
+      FILM_GZ_B64: ${{ needs.script.outputs.film }}
     steps:
       - uses: actions/checkout@v4
       - name: System packages (ffmpeg, music)
@@ -185,14 +235,22 @@ jobs:
           include-hidden-files: false
 
   render:
-    needs: prepare
+    needs: [script, prepare]
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    env:
+      FILM_GZ_B64: ${{ needs.script.outputs.film }}
     strategy:
       matrix:
         part: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v4
+      - name: Tell the studio
+        if: matrix.part == 0
+        env:
+          STUDIO_URL: ${{ secrets.STUDIO_URL }}
+        run: |
+          curl -fsS -m 20 -X POST "$STUDIO_URL?p=/gh/render" -H 'Content-Type: application/json' -d "{\"job\":\"$JOB_ID\",\"step\":\"render\"}" >/dev/null || true
       - name: System packages (ffmpeg, Tamil font)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-noto-core >/dev/null
       - uses: actions/setup-node@v4
@@ -224,11 +282,18 @@ jobs:
           retention-days: 1
 
   join:
-    needs: render
+    needs: [script, render]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      FILM_GZ_B64: ${{ needs.script.outputs.film }}
     steps:
       - uses: actions/checkout@v4
+      - name: Tell the studio
+        env:
+          STUDIO_URL: ${{ secrets.STUDIO_URL }}
+        run: |
+          curl -fsS -m 20 -X POST "$STUDIO_URL?p=/gh/render" -H 'Content-Type: application/json' -d "{\"job\":\"$JOB_ID\",\"step\":\"preview\"}" >/dev/null || true
       - name: ffmpeg
         run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
       - uses: astral-sh/setup-uv@v6
@@ -250,15 +315,44 @@ jobs:
         run: |
           echo "$FILM_GZ_B64" | base64 -d | gunzip > "job/$JOB_ID/film.json"
           .venv/bin/python part.py join "$RENDER_PARTS" "job/$JOB_ID"
-      - name: Keep the result
-        if: always()
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.job_id }}
-          path: |
-            job/${{ inputs.job_id }}/video.mp4
-            job/${{ inputs.job_id }}/preview.mp4
-            job/${{ inputs.job_id }}/facts.json
-            job/${{ inputs.job_id }}/film.json
-          retention-days: 7
-          if-no-files-found: warn
+          name: ${{ inputs.job_id }}-video
+          path: job/${{ inputs.job_id }}/video.mp4
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.job_id }}-preview
+          path: job/${{ inputs.job_id }}/preview.mp4
+          retention-days: 30
+      - name: Tell the studio it is ready
+        env:
+          STUDIO_URL: ${{ secrets.STUDIO_URL }}
+        run: .venv/bin/python brain.py done "job/$JOB_ID"
+
+  report:
+    needs: [script, voice, pictures, prepare, render, join]
+    if: always() && needs.join.result != 'success'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Tell the studio what went wrong
+        env:
+          STUDIO_URL: ${{ secrets.STUDIO_URL }}
+          NEEDS: ${{ toJSON(needs) }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - <<'EOF'
+          import json, os, urllib.request
+          needs = json.loads(os.environ["NEEDS"])
+          names = {"script": "writing the shot list", "voice": "the voice", "pictures": "the pictures",
+                   "prepare": "putting the film together", "render": "rendering", "join": "the final check"}
+          bad = [k for k in names if needs.get(k, {}).get("result") == "failure"]
+          if bad:
+              body = {"ok": False, "error": f"{names[bad[0]]} failed on GitHub. Details: {os.environ['RUN']}"}
+          else:
+              body = {"ok": False, "cancelled": True, "error": "the render was stopped"}
+          body["job"] = os.environ["JOB_ID"]
+          req = urllib.request.Request(os.environ["STUDIO_URL"] + "?p=/gh/render", data=json.dumps(body).encode(),
+                                       headers={"Content-Type": "application/json"}, method="POST")
+          print(urllib.request.urlopen(req, timeout=60).read()[:200])
+          EOF
