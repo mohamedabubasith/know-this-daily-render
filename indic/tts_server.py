@@ -56,7 +56,6 @@ class TTSRequest(BaseModel):
     text: str = Field(min_length=1, max_length=MAX_CHARS)
     voice: str = DEFAULT_VOICE
     rate: str = "+0%"
-    raw: bool = False
     pitch: str = "+0Hz"
 
 
@@ -181,6 +180,7 @@ def _indic_mp3(text: str, rate: str, raw: bool = False) -> bytes:
 class IndicRequest(BaseModel):
     text: str = Field(min_length=1, max_length=600)
     rate: str = "+0%"
+    raw: bool = False
 
 
 OUT = INDIC / "out"
