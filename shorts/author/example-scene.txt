@@ -1,0 +1,145 @@
+<template>
+  <style>
+    #root { position: absolute; inset: 0; overflow: hidden; background: #FFC531; }
+    #f-svg { position: absolute; left: 0; top: 0; }
+  </style>
+  <div id="root" data-composition-id="farmer" data-width="1080" data-height="1920">
+    <svg id="f-svg" width="1080" height="1920" viewBox="0 0 1080 1920" data-layout-ignore>
+      <defs>
+        <g id="f-cloud"><circle cx="-90" cy="10" r="60"/><circle cx="-20" cy="-36" r="86"/><circle cx="72" cy="-10" r="70"/><circle cx="142" cy="22" r="50"/><rect x="-150" y="10" width="342" height="62" rx="31"/></g>
+      </defs>
+      <rect id="f-back" x="0" y="0" width="1080" height="1920" fill="#4FB3F0"/>
+      <g id="f-cam">
+        <rect id="f-sky" x="-400" y="-1600" width="1880" height="2700" fill="#4FB3F0"/>
+        <g id="f-wheel">
+          <circle cx="850" cy="463" r="118" fill="#FFE27A" opacity="0.45"/><circle cx="850" cy="463" r="84" fill="#FFD23F"/>
+          <circle cx="230" cy="1537" r="66" fill="#FFF4DC"/><circle cx="210" cy="1520" r="14" fill="#E3D6B8"/><circle cx="252" cy="1556" r="10" fill="#E3D6B8"/>
+        </g>
+        <g fill="#FFFFFF">
+          <g transform="translate(240 -640) scale(1.2)"><use id="f-c1" href="#f-cloud"/></g>
+          <g transform="translate(800 -300)"><use id="f-c2" href="#f-cloud"/></g>
+          <g transform="translate(250 330) scale(0.8)"><use id="f-c3" href="#f-cloud"/></g>
+          <g transform="translate(700 210) scale(0.6)"><use id="f-c4" href="#f-cloud"/></g>
+        </g>
+        <path d="M -400 1010 L -400 940 C -200 860 -60 900 120 950 C 300 880 520 870 700 940 C 880 880 1200 880 1480 960 L 1480 1010 Z" fill="#3F9E7A"/>
+        <!-- palms -->
+        <g id="f-palm1">
+          <path d="M 900 1010 C 880 880 900 760 862 640" fill="none" stroke="#8B5A2B" stroke-width="28" stroke-linecap="round"/>
+          <g fill="none" stroke="#2E8B3D" stroke-width="30" stroke-linecap="round">
+            <path d="M 862 640 C 800 590 730 600 690 650"/><path d="M 862 640 C 820 560 760 530 700 540"/><path d="M 862 640 C 860 560 900 510 960 500"/><path d="M 862 640 C 920 590 990 600 1030 650"/><path d="M 862 640 C 930 640 980 680 1000 730"/><path d="M 862 640 C 800 650 760 700 750 750"/>
+          </g>
+          <circle cx="850" cy="662" r="18" fill="#6B3B1F"/><circle cx="880" cy="664" r="18" fill="#6B3B1F"/>
+        </g>
+        <g id="f-palm2">
+          <path d="M 1010 1010 C 1020 920 1000 860 1024 790" fill="none" stroke="#8B5A2B" stroke-width="20" stroke-linecap="round"/>
+          <g fill="none" stroke="#3FA34D" stroke-width="22" stroke-linecap="round">
+            <path d="M 1024 790 C 980 750 930 760 906 796"/><path d="M 1024 790 C 1000 730 960 712 920 716"/><path d="M 1024 790 C 1030 730 1060 700 1100 696"/><path d="M 1024 790 C 1070 760 1110 770 1130 800"/>
+          </g>
+        </g>
+        <!-- field -->
+        <rect id="f-ground" x="-400" y="1000" width="1880" height="1500" fill="#7BC24B"/>
+        <g id="f-rows" fill="#62AD3B">
+          <path d="M 540 1000 L -760 1920 L -420 1920 Z"/><path d="M 540 1000 L -120 1920 L 150 1920 Z"/><path d="M 540 1000 L 420 1920 L 660 1920 Z"/><path d="M 540 1000 L 930 1920 L 1200 1920 Z"/><path d="M 540 1000 L 1500 1920 L 1840 1920 Z"/>
+        </g>
+        <g fill="none" stroke="#2E8B3D" stroke-width="12" stroke-linecap="round">
+          <path id="f-t1" d="M 90 1500 q -26 -50 -40 -70 M 90 1500 q 0 -60 4 -86 M 90 1500 q 26 -46 44 -62"/>
+          <path id="f-t2" d="M 610 1440 q -22 -44 -34 -60 M 610 1440 q 0 -52 4 -74 M 610 1440 q 22 -40 38 -54"/>
+          <path id="f-t3" d="M 940 1560 q -26 -50 -40 -70 M 940 1560 q 0 -60 4 -86 M 940 1560 q 26 -46 44 -62"/>
+          <path id="f-t4" d="M 330 1700 q -30 -56 -46 -78 M 330 1700 q 0 -66 4 -96 M 330 1700 q 30 -52 50 -70"/>
+          <path id="f-t5" d="M 780 1780 q -30 -56 -46 -78 M 780 1780 q 0 -66 4 -96 M 780 1780 q 30 -52 50 -70"/>
+        </g>
+        <g id="f-rain" stroke="#D6ECFF" stroke-width="7" stroke-linecap="round" opacity="0"></g>
+        <g fill="#44557A">
+          <g transform="translate(180 250) scale(1.7)"><use id="f-s1" href="#f-cloud"/></g>
+          <g transform="translate(900 230) scale(1.6)"><use id="f-s2" href="#f-cloud"/></g>
+        </g>
+        <g fill="#56698F"><g transform="translate(520 330) scale(1.5)"><use id="f-s3" href="#f-cloud"/></g></g>
+        <!-- farmer -->
+        <g id="f-man">
+          <line x1="215" y1="640" x2="215" y2="1150" stroke="#8B5A2B" stroke-width="15" stroke-linecap="round"/>
+          <path d="M 178 1096 L 252 1096 L 246 1168 L 184 1168 Z" fill="#C9CED6"/>
+          <line x1="298" y1="1040" x2="292" y2="1150" stroke="#7A4526" stroke-width="34" stroke-linecap="round"/><line x1="362" y1="1040" x2="370" y2="1150" stroke="#7A4526" stroke-width="34" stroke-linecap="round"/>
+          <ellipse cx="302" cy="1160" rx="32" ry="13" fill="#5E3219"/><ellipse cx="382" cy="1160" rx="32" ry="13" fill="#5E3219"/>
+          <path d="M 246 930 L 414 930 L 422 1062 C 380 1078 280 1078 238 1062 Z" fill="#FFF4DC"/>
+          <path d="M 330 940 L 318 1068" stroke="#D9CFB5" stroke-width="7" stroke-linecap="round"/>
+          <path d="M 255 950 C 238 860 250 780 286 750 L 374 750 C 410 780 422 860 405 950 Z" fill="#F0E2BE"/>
+          <path d="M 290 752 L 330 760 L 300 950 L 258 950 C 250 880 262 800 290 752 Z" fill="#E23D3D"/>
+          <path d="M 265 775 Q 212 830 215 900" fill="none" stroke="#7A4526" stroke-width="34" stroke-linecap="round"/>
+          <circle cx="215" cy="902" r="22" fill="#7A4526"/>
+          <rect x="308" y="700" width="44" height="66" rx="20" fill="#6B3B1F"/>
+          <g id="f-head">
+            <path d="M 252 640 L 230 706" stroke="#C62F2F" stroke-width="24" stroke-linecap="round"/>
+            <circle cx="330" cy="650" r="78" fill="#7A4526"/>
+            <path d="M 250 646 C 244 556 300 540 336 540 C 384 540 420 568 410 646 C 372 612 290 612 250 646 Z" fill="#E23D3D"/>
+            <path d="M 270 600 C 310 572 360 572 396 600" fill="none" stroke="#F26A5A" stroke-width="9" stroke-linecap="round"/>
+            <circle cx="346" cy="652" r="7" fill="#1F1235"/><circle cx="386" cy="650" r="7" fill="#1F1235"/>
+            <path d="M 334 690 Q 366 672 400 692" fill="none" stroke="#FFF4DC" stroke-width="13" stroke-linecap="round"/>
+            <path d="M 350 708 q 18 12 36 0" fill="none" stroke="#3A1A10" stroke-width="6" stroke-linecap="round"/>
+          </g>
+          <g id="f-ua">
+            <line x1="398" y1="775" x2="493" y2="775" stroke="#7A4526" stroke-width="34" stroke-linecap="round"/>
+            <g id="f-fa"><line x1="493" y1="775" x2="593" y2="775" stroke="#7A4526" stroke-width="32" stroke-linecap="round"/><g id="f-hand"><ellipse cx="600" cy="775" rx="26" ry="20" fill="#7A4526"/></g></g>
+          </g>
+        </g>
+        <circle id="f-dot1" cx="250" cy="492" r="24" fill="#FFD23F"/>
+        <circle id="f-dot2" cx="330" cy="462" r="24" fill="#FFD23F"/>
+        <circle id="f-dot3" cx="410" cy="492" r="24" fill="#FFD23F"/>
+      </g>
+    </svg>
+  </div>
+  <script>
+    (function () {
+      /*LIB*/
+      const T = /*T*/; const D = T.D;  // this example hard-codes its beat times below; in your scenes derive them from T.shots[n].v0 / .v1
+      const tl = gsap.timeline({ paused: true });
+      const A = { S: { x: 398, y: 775 }, L1: 95, L2: 100, u: "#f-ua", f: "#f-fa", h: "#f-hand" };
+      // come down from the sky onto the field
+      gsap.set("#f-cam", { scale: 1.2, x: -36, svgOrigin: "0 0" });
+      tl.fromTo("#f-cam", { y: 960 }, { y: 1120, duration: 0.15, ease: "power2.out" }, 0);
+      tl.to("#f-cam", { y: -240, duration: 0.7, ease: "power2.inOut" }, 0.15);
+      gsap.set(["#f-s1", "#f-s2", "#f-s3"], { opacity: 0 });
+      tl.set(["#f-s1", "#f-s2", "#f-s3"], { opacity: 1 }, 3.65);
+      tl.set("#f-back", { opacity: 0 }, 1.2);
+      // ambient
+      tl.fromTo("#f-c1", { x: -60 }, { x: 60, duration: D, ease: "none" }, 0);
+      tl.fromTo("#f-c2", { x: 40 }, { x: -60, duration: D, ease: "none" }, 0);
+      tl.fromTo("#f-c3", { x: -40 }, { x: 110, duration: D, ease: "none" }, 0);
+      tl.fromTo("#f-c4", { x: 60 }, { x: -120, duration: D, ease: "none" }, 0);
+      amb(tl, "#f-palm1", { rotation: 3, svgOrigin: "900 1010" }, 1.0, 0, D);
+      amb(tl, "#f-palm2", { rotation: -4, svgOrigin: "1010 1010" }, 0.8, 0, D);
+      ["#f-t1", "#f-t2", "#f-t3", "#f-t4", "#f-t5"].forEach((t, i) => amb(tl, t, { skewX: 10, transformOrigin: "50% 100%" }, 0.6 + i * 0.07, 0, D));
+      // watching the sky
+      reach(tl, A, [428, 950, -1, 90], 0, 0);
+      reach(tl, A, [398, 630, 1, 200], 0.5, 0.75, "back.out(1.4)");
+      tl.to("#f-head", { rotation: -14, svgOrigin: "330 720", duration: 0.5, ease: "power2.out" }, 0.75);
+      // many years: days and nights wheel past
+      tl.to("#f-wheel", { rotation: 720, svgOrigin: "540 1000", duration: 1.9, ease: "sine.inOut" }, 1.85);
+      [[2.2, "#27306E"], [2.62, "#4FB3F0"], [2.95, "#27306E"], [3.33, "#4FB3F0"]].forEach((c) => tl.to("#f-sky", { fill: c[1], duration: 0.22, ease: "sine.inOut" }, c[0]));
+      [[250, 492], [330, 462], [410, 492]].forEach((p, i) => {
+        const o = p[0] + " " + p[1];
+        tl.fromTo("#f-dot" + (i + 1), { scale: 0, y: 70, svgOrigin: o }, { scale: 1, y: 0, duration: 0.45, ease: "back.out(1.8)" }, 2.4 + i * 0.52);
+      });
+      // he knows: the clouds gather, the rain comes
+      tl.to("#f-sky", { fill: "#6E87A8", duration: 0.7, ease: "power2.inOut" }, 3.75);
+      tl.to("#f-ground", { fill: "#69B043", duration: 0.7 }, 3.75);
+      tl.to("#f-wheel", { opacity: 0, duration: 0.4 }, 3.8);
+      tl.fromTo("#f-s1", { x: -520 }, { x: 0, duration: 0.8, ease: "power3.out" }, 3.7);
+      tl.fromTo("#f-s2", { x: 520 }, { x: 0, duration: 0.8, ease: "power3.out" }, 3.8);
+      tl.fromTo("#f-s3", { y: -420 }, { y: 0, duration: 0.8, ease: "power3.out" }, 3.9);
+      tl.to("#f-s1", { x: 30, duration: 1.5, ease: "none" }, 4.5); tl.to("#f-s2", { x: -30, duration: 1.4, ease: "none" }, 4.6); tl.to("#f-s3", { x: 24, duration: 1.3, ease: "none" }, 4.7);
+      reach(tl, A, [505, 600, 1, -50], 0.4, 3.85, "back.out(1.5)");
+      tl.set("#f-rain", { opacity: 1 }, 4.3);
+      const r = rng(11), rain = $("#f-rain");
+      for (let i = 0; i < 54; i++) {
+        const x = -80 + r() * 1300, d = mk(rain, "line", { x1: x, y1: 0, x2: x - 16, y2: 52 });
+        tl.fromTo(d, { y: 240 }, { y: 2000, x: -120, duration: 0.62 + r() * 0.2, ease: "none", repeat: 3 }, 4.3 + r() * 0.75);
+      }
+      reach(tl, A, [545, 742, 1, 0], 0.5, 4.75, "power2.inOut");
+      tl.to("#f-head", { rotation: -6, svgOrigin: "330 720", duration: 0.5, ease: "power2.inOut" }, 4.75);
+      amb(tl, "#f-hand", { y: 8 }, 0.25, 5.25, 0.5);
+      // walk on to the village shop
+      tl.to("#f-cam", { x: -1900, duration: 0.32, ease: "power3.in" }, D - 0.33);
+      window.__timelines["farmer"] = tl;
+    })();
+  </script>
+</template>

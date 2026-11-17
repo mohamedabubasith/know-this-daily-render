@@ -1,0 +1,3 @@
+#!/bin/sh
+# The pinned HyperFrames CLI. Usage: ./hf check --json . | ./hf snapshot --at 1,2,3 -o shots .
+exec npx --yes "${SHORTS_HYPERFRAMES:-hyperframes@0.9.40}" "$@"

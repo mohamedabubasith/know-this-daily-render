@@ -1,0 +1,91 @@
+name: render
+run-name: "render ${{ inputs.job_id }}"
+
+# Started by the Know This Daily studio (or by hand): one shot list in, one finished video out as an artifact.
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: "Studio job id (names the run and the artifact)"
+        required: true
+        type: string
+      film_gz_b64:
+        description: "film.json, gzipped then base64"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: render-${{ inputs.job_id }}
+  cancel-in-progress: true
+
+jobs:
+  render:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      HYPERFRAMES_NO_TELEMETRY: "1"
+      SHORTS_CONFIG: ${{ github.workspace }}/.config
+      JOB_ID: ${{ inputs.job_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System packages (ffmpeg, music, Tamil font)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fluidsynth fluid-soundfont-gm fonts-noto-core >/dev/null
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: requirements.lock
+
+      - name: Python packages
+        run: |
+          uv venv --python 3.13 .venv
+          uv pip install --python .venv -r requirements.lock
+
+      - name: Cache HyperFrames and Chrome
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/hyperframes
+            ~/.cache/puppeteer
+          key: hyperframes-0.9.40-${{ runner.os }}
+
+      - name: Claude Code (only drawn explainer films use it)
+        run: npm install -g @anthropic-ai/claude-code >/dev/null 2>&1 || true
+
+      - name: Secrets to files
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          mkdir -p "$SHORTS_CONFIG" && chmod 700 "$SHORTS_CONFIG"
+          [ -n "$HF_TOKEN" ] && printf '%s' "$HF_TOKEN" > "$SHORTS_CONFIG/hf-token" || echo "no HF token: Kayal's voice will not work"
+
+      - name: Make the video
+        env:
+          FILM_GZ_B64: ${{ inputs.film_gz_b64 }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          SHORTS_VOICE_SPACE: ${{ secrets.SHORTS_VOICE_SPACE }}
+        run: .venv/bin/python render.py "job/$JOB_ID"
+
+      - name: Keep the result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.job_id }}
+          path: |
+            job/${{ inputs.job_id }}/video.mp4
+            job/${{ inputs.job_id }}/preview.mp4
+            job/${{ inputs.job_id }}/facts.json
+            job/${{ inputs.job_id }}/film.json
+          retention-days: 7
+          if-no-files-found: warn

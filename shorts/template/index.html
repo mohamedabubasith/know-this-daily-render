@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en" data-resolution="portrait">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <!-- Shot list, timings and words of this film, written by the pipeline -->
+    <script src="assets/film.js"></script>
+    <!-- Animated scene builders for "anim" shots -->
+    <script src="assets/anim.js"></script>
+    <style>
+      /* Tamil on-screen text: the bundled fonts have no Tamil, so the film ships its own. */
+      @font-face { font-family: "Noto Sans Tamil"; src: url("assets/fonts/NotoSansTamil.ttf"); font-weight: 100 900; }
+      :root {
+        --ink: #ffffff;
+        --brand: #ffd21f;
+        --night: #0b0d1c;
+        --font-display: "Archivo Black", "Noto Sans Tamil", sans-serif;
+        --font-text: "Inter", "Noto Sans Tamil", sans-serif;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { margin: 0; width: 1080px; height: 1920px; overflow: hidden; background: var(--night); }
+      #root { position: relative; width: 100%; height: 100%; font-family: var(--font-text); }
+      #film, #shots, .layer, #overlays, #subs { position: absolute; inset: 0; }
+      /* The shots stack among themselves; every layer below paints above all of them. */
+      #shots { z-index: 0; isolation: isolate; }
+      #grade { z-index: 1; } #leak { z-index: 2; } #dust { z-index: 3; } #vignette { z-index: 4; } #scrim { z-index: 5; }
+      #grain { z-index: 6; } #flash { z-index: 7; } #bug, #hook, #overlays { z-index: 8; } #subs { z-index: 9; } #endcard { z-index: 10; }
+      #film { overflow: hidden; }
+      .shot { position: absolute; inset: 0; overflow: hidden; background: var(--night); }
+      .fx { position: absolute; inset: 0; }
+      .cam { position: absolute; inset: 0; }
+      .cam img { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; object-fit: cover; }
+
+      .anim-stage, .anim-bg { position: absolute; inset: 0; overflow: hidden; }
+      .anim-orb { position: absolute; border-radius: 50%; }
+      .anim-svg { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; overflow: visible; }
+      .anim-title { position: absolute; left: 80px; right: 80px; top: 290px; font: 400 60px/1.05 var(--font-display); color: #fff; text-transform: uppercase; text-shadow: 0 4px 24px rgba(0, 0, 0, 0.5); }
+      .anim-title-bar { width: 200px; height: 10px; margin-top: 18px; border-radius: 5px; transform-origin: 0 50%; }
+      .anim-pin-label { position: absolute; left: 0; right: 0; top: 1030px; margin: 0 auto; width: fit-content; max-width: 860px; padding: 16px 30px; border-radius: 999px;
+        background: rgba(11, 13, 28, 0.85); border: 3px solid var(--brand); color: #fff; font: 900 40px/1.1 var(--font-text); text-align: center; }
+      #grade { mix-blend-mode: soft-light; }
+      #leak {
+        mix-blend-mode: screen;
+        background: radial-gradient(closest-side at 50% 50%, rgba(255, 170, 80, 0.9), rgba(255, 90, 60, 0.35) 45%, rgba(255, 60, 60, 0) 75%);
+        width: 1400px; height: 1400px; left: -160px; top: 260px;
+      }
+      #dust .mote { position: absolute; border-radius: 50%; background: radial-gradient(circle, rgba(255, 245, 220, 0.9), rgba(255, 245, 220, 0) 70%); }
+      #vignette { background: radial-gradient(ellipse 75% 62% at 50% 46%, rgba(0, 0, 0, 0) 58%, rgba(0, 0, 0, 0.5) 100%); }
+      #scrim {
+        background:
+          linear-gradient(180deg, rgba(5, 6, 15, 0.72) 0%, rgba(5, 6, 15, 0.45) 22%, rgba(5, 6, 15, 0) 40%),
+          linear-gradient(0deg, rgba(5, 6, 15, 0.7) 0%, rgba(5, 6, 15, 0.28) 32%, rgba(5, 6, 15, 0) 48%);
+      }
+      #grain { background: url("assets/grain.png") repeat; opacity: 0.075; mix-blend-mode: overlay; left: -256px; top: -256px; right: -256px; bottom: -256px; }
+      #flash { opacity: 0; }
+
+      #bug { position: absolute; left: 64px; top: 196px; display: flex; align-items: center; gap: 16px; opacity: 0; }
+      #bug svg { width: 52px; height: 52px; border-radius: 14px; }
+      #bug span { color: #fff; font: 700 28px/1 var(--font-text); letter-spacing: 0.14em; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6); }
+
+      #hook {
+        position: absolute; left: 70px; right: 70px; top: 330px; text-align: left;
+        font: 400 108px/1.02 var(--font-display); color: #fff; text-transform: uppercase;
+        text-shadow: 0 4px 0 rgba(0, 0, 0, 0.55), 0 6px 30px rgba(0, 0, 0, 0.75);
+      }
+      #hook .w { display: inline-block; opacity: 0; }
+      #hook .hl { color: var(--brand); }
+
+      .ov { position: absolute; left: 70px; right: 70px; opacity: 0; }
+      .ov-big { top: 420px; text-align: center; font: 400 150px/1 var(--font-display); color: #fff; text-transform: uppercase; text-shadow: 0 8px 34px rgba(0, 0, 0, 0.6); }
+      .ov-count { top: 400px; text-align: center; color: #fff; text-shadow: 0 8px 34px rgba(0, 0, 0, 0.6); }
+      .ov-count .num { font: 400 150px/1 var(--font-display); color: var(--brand); white-space: nowrap; }
+      .ov-count .sfx { font-size: 72px; margin-left: 8px; }
+      .ov-count .cap { margin-top: 14px; font: 900 46px/1.1 var(--font-text); text-transform: uppercase; letter-spacing: 0.06em; }
+      .ov-label { top: 300px; left: 70px; right: auto; padding: 14px 26px; border-radius: 999px; background: rgba(11, 13, 28, 0.72); border: 2px solid var(--brand); color: #fff; font: 700 36px/1 var(--font-text); letter-spacing: 0.08em; text-transform: uppercase; }
+
+      .sub { position: absolute; left: 80px; right: 80px; top: 1190px; text-align: center; opacity: 0; }
+      .sub span {
+        display: inline; padding: 10px 22px; border-radius: 18px; line-height: 1.55;
+        background: rgba(8, 9, 20, 0.84); color: #fff; font: 700 54px var(--font-text);
+        -webkit-box-decoration-break: clone; box-decoration-break: clone;
+      }
+      .sub b { color: var(--brand); font-weight: 900; }
+      /* Tamil in display type: Archivo Black has no Tamil, so the Tamil font takes over; make it as heavy. */
+      #hook, .ov-big, .ov-count, .ov-label, .anim-title, #end-name { font-variation-settings: "wght" 900; }
+
+      #endcard { opacity: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 30px; background: rgba(7, 8, 20, 0.78); }
+      #endcard svg { width: 230px; height: 230px; border-radius: 52px; }
+      #end-name { font: 400 86px/1 var(--font-display); color: #fff; text-transform: uppercase; }
+      #end-line { font: 700 42px/1.25 var(--font-text); color: #fff; text-align: center; opacity: 0.92; padding: 0 120px; }
+      #end-line b { color: var(--brand); }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="__DURATION__" data-width="1080" data-height="1920" data-motion-blur="on">
+      <div id="film" class="clip" data-start="0" data-duration="__DURATION__" data-track-index="0" data-track-kind="graphics" data-layout-allow-overflow data-layout-allow-overlap>
+        <div id="shots">
+__SHOTS__
+        </div>
+        <div id="grade" class="layer"></div>
+        <div id="leak" class="layer" data-layout-ignore></div>
+        <div id="dust" class="layer" data-layout-ignore></div>
+        <div id="vignette" class="layer"></div>
+        <div id="scrim" class="layer"></div>
+        <div id="grain" class="layer" data-layout-ignore></div>
+        <div id="flash" class="layer"></div>
+        <div id="bug">
+          <svg viewBox="0 0 800 800"><rect width="800" height="800" fill="#FFD21F"/><g stroke="#14163A" stroke-width="26" stroke-linecap="round"><path d="M400 70v60M178 150l42 44M622 150l-42 44M92 360h60M708 360h-60"/></g><path d="M400 170c-112 0-196 86-196 190 0 70 36 122 82 160 22 18 30 40 30 66h168c0-26 8-48 30-66 46-38 82-90 82-160 0-104-84-190-196-190z" fill="#14163A"/><rect x="318" y="606" width="164" height="44" rx="22" fill="#14163A"/><rect x="338" y="668" width="124" height="40" rx="20" fill="#14163A"/><path d="M318 268h58v104l92-104h74l-104 114 112 138h-76l-78-100-20 22v78h-58z" fill="#FFD21F"/><circle cx="548" cy="250" r="30" fill="#FF5A3C"/></svg>
+          <span>KNOW THIS DAILY</span>
+        </div>
+        <h1 id="hook"></h1>
+        <div id="overlays"></div>
+        <div id="subs" data-layout-allow-caption-zone></div>
+        <div id="endcard" class="layer">
+          <svg viewBox="0 0 800 800"><rect width="800" height="800" fill="#FFD21F"/><g stroke="#14163A" stroke-width="26" stroke-linecap="round"><path d="M400 70v60M178 150l42 44M622 150l-42 44M92 360h60M708 360h-60"/></g><path d="M400 170c-112 0-196 86-196 190 0 70 36 122 82 160 22 18 30 40 30 66h168c0-26 8-48 30-66 46-38 82-90 82-160 0-104-84-190-196-190z" fill="#14163A"/><rect x="318" y="606" width="164" height="44" rx="22" fill="#14163A"/><rect x="338" y="668" width="124" height="40" rx="20" fill="#14163A"/><path d="M318 268h58v104l92-104h74l-104 114 112 138h-76l-78-100-20 22v78h-58z" fill="#FFD21F"/><circle cx="548" cy="250" r="30" fill="#FF5A3C"/></svg>
+          <div id="end-name">Know This Daily</div>
+          <div id="end-line">Follow for <b>one new thing</b><br />every day</div>
+        </div>
+      </div>
+      <audio id="voice" class="clip" src="assets/voice.mp3" data-start="0" data-duration="__VOICE_DURATION__" data-track-index="1" data-volume="1"></audio>
+    </div>
+
+    <script>
+      // The film engine. Everything is a function of timeline time: the same render every time.
+      const F = window.FILM;
+      const END = F.duration;
+      const tl = gsap.timeline({ paused: true });
+      const q = (s) => document.querySelector(s);
+
+      let seed = F.seed || 7;
+      const rnd = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+      const reps = (span, cycle) => Math.max(0, Math.floor(span / cycle) - 1);
+
+      // ---- Camera moves: scale, x/y in percent of the frame, roll in degrees, plus a little 3D turn ----
+      const MOVES = {
+        push_in:    [{ s: 1.06, x: 0, y: 0, r: 0 }, { s: 1.24, x: 0, y: -1.5, r: 0 }],
+        pull_out:   [{ s: 1.28, x: 0, y: 1.5, r: 0 }, { s: 1.07, x: 0, y: 0, r: 0 }],
+        pan_left:   [{ s: 1.2, x: 4.5, y: 0, r: 0 }, { s: 1.2, x: -4.5, y: 0, r: 0 }],
+        pan_right:  [{ s: 1.2, x: -4.5, y: 0, r: 0 }, { s: 1.2, x: 4.5, y: 0, r: 0 }],
+        tilt_up:    [{ s: 1.2, x: 0, y: 5.5, r: 0 }, { s: 1.2, x: 0, y: -5.5, r: 0 }],
+        tilt_down:  [{ s: 1.2, x: 0, y: -5.5, r: 0 }, { s: 1.2, x: 0, y: 5.5, r: 0 }],
+        drift:      [{ s: 1.12, x: -2, y: 1, r: -0.7 }, { s: 1.19, x: 2, y: -1, r: 0.7 }],
+        crash_zoom: [{ s: 1.0, x: 0, y: 0, r: 0 }, { s: 1.32, x: 0, y: -2, r: 0 }],
+        orbit:      [{ s: 1.18, x: -3, y: 0, r: -1.2 }, { s: 1.18, x: 3, y: 0, r: 1.2 }],
+      };
+      const FRAMING_ZOOM = { wide: 0, medium: 0.02, close: 0.06, extreme_close: 0.1, aerial: 0, low_angle: 0.03 };
+      const GRADES = {
+        mysterious: "rgba(30, 80, 160, 0.42)", dramatic: "rgba(255, 120, 40, 0.34)", happy: "rgba(255, 200, 110, 0.3)",
+        sad: "rgba(70, 90, 140, 0.45)", excited: "rgba(255, 70, 130, 0.26)", calm: "rgba(90, 160, 170, 0.28)",
+        curious: "rgba(130, 100, 255, 0.26)", epic: "rgba(255, 170, 60, 0.36)", tense: "rgba(200, 40, 40, 0.3)",
+      };
+
+      // ---- Shots: camera, 3D turn and the transition into each ----
+      const drawn = (s) => s.kind === "anim" || s.kind === "scene"; // drawings, not photos
+      F.shots.forEach((s, i) => {
+        const el = q(`#shot-${i}`), fx = el.querySelector(".fx"), cam = el.querySelector(".cam");
+        // Animated scenes get a gentle push only: their drawing fills the frame and must stay readable.
+        const [a, b] = drawn(s) ? [{ s: 1, x: 0, y: 0, r: 0 }, { s: 1.04, x: 0, y: -0.5, r: 0 }] : (MOVES[s.move] || MOVES.drift);
+        const z = drawn(s) ? 0 : (FRAMING_ZOOM[s.framing] || 0);
+        const t0 = s.clipStart, t1 = s.clipEnd;
+        const dir = i % 2 ? 1 : -1;
+        const turn = drawn(s) ? 0 : 1;
+        gsap.set(cam, { transformPerspective: 1400, transformOrigin: "50% 50%" });
+        tl.fromTo(cam,
+          { scale: a.s + z, xPercent: a.x, yPercent: a.y, rotation: a.r, rotationY: 1.6 * dir * turn, rotationX: -0.8 * turn },
+          { scale: b.s + z, xPercent: b.x, yPercent: b.y, rotation: b.r, rotationY: -1.6 * dir * turn, rotationX: 0.8 * turn,
+            duration: t1 - t0, ease: s.move === "crash_zoom" ? "expo.out" : "sine.inOut" }, t0);
+
+        if (i === 0) return;
+        const prev = q(`#shot-${i - 1} .fx`), at = s.start;
+        switch (s.transition) {
+          case "fade":
+            tl.fromTo(fx, { opacity: 0 }, { opacity: 1, duration: 0.55, ease: "power1.inOut" }, at - 0.55);
+            break;
+          case "whip":
+            tl.fromTo(prev, { xPercent: 0 }, { xPercent: -100 * dir, duration: 0.3, ease: "power3.inOut", immediateRender: false }, at - 0.25);
+            tl.fromTo(fx, { xPercent: 100 * dir }, { xPercent: 0, duration: 0.3, ease: "power3.inOut" }, at - 0.25);
+            break;
+          case "zoom":
+            tl.fromTo(prev, { scale: 1, opacity: 1 }, { scale: 1.7, opacity: 0, duration: 0.32, ease: "power3.in", immediateRender: false }, at - 0.3);
+            tl.fromTo(fx, { scale: 1.35 }, { scale: 1, duration: 0.55, ease: "power3.out" }, at - 0.3);
+            break;
+          case "iris":
+            tl.fromTo(fx, { clipPath: "circle(0% at 50% 45%)" }, { clipPath: "circle(120% at 50% 45%)", duration: 0.5, ease: "power2.inOut" }, at - 0.4);
+            break;
+          case "flash":
+            tl.fromTo("#flash", { opacity: 0, backgroundColor: "#ffffff" }, { opacity: 0.92, duration: 0.08, ease: "power2.in", immediateRender: false }, at - 0.08)
+              .to("#flash", { opacity: 0, duration: 0.45, ease: "power2.out" }, at);
+            break;
+          case "dip":
+            tl.fromTo("#flash", { opacity: 0, backgroundColor: "#000000" }, { opacity: 1, duration: 0.28, ease: "power2.in", immediateRender: false }, at - 0.28)
+              .to("#flash", { opacity: 0, duration: 0.38, ease: "power2.out" }, at);
+            break;
+          default: // cut: the clip windows already switch at this instant
+            break;
+        }
+        // A warm light leak washes across the fast cuts.
+        if (["whip", "zoom", "flash"].includes(s.transition)) {
+          tl.fromTo("#leak", { xPercent: -70, opacity: 0 }, { xPercent: 40, opacity: 0.55, duration: 0.45, ease: "power2.in", immediateRender: false }, at - 0.35)
+            .to("#leak", { xPercent: 90, opacity: 0, duration: 0.5, ease: "power2.out" }, at + 0.1);
+        }
+      });
+      gsap.set("#leak", { opacity: 0 });
+
+      // ---- Animated scenes ----
+      F.shots.forEach((s, i) => {
+        if (s.kind === "anim") window.buildAnim(q(`#anim-${i}`), s, tl, F.accent);
+      });
+      gsap.set("#flash", { opacity: 0 });
+
+      // ---- Colour grade follows each shot's mood ----
+      F.shots.forEach((s, i) => {
+        const c = drawn(s) ? "rgba(0, 0, 0, 0)" : (GRADES[s.mood] || "rgba(0, 0, 0, 0)"); // drawings keep their own colours
+        const shade = drawn(s) ? 0.15 : 1; // photos need shading behind text; drawings do not
+        if (i === 0) gsap.set("#grade", { backgroundColor: c });
+        else tl.to("#grade", { backgroundColor: c, duration: 0.6, ease: "sine.inOut" }, s.start - 0.3);
+        if (i === 0) gsap.set(["#scrim", "#vignette"], { opacity: shade });
+        else tl.to(["#scrim", "#vignette"], { opacity: shade, duration: 0.4, ease: "sine.inOut" }, s.start - 0.2);
+      });
+
+      // ---- Dust in the light, film grain ----
+      const dust = q("#dust");
+      for (let i = 0; i < 34; i++) {
+        const m = document.createElement("div");
+        const size = 6 + rnd() * 22;
+        m.className = "mote";
+        Object.assign(m.style, { width: `${size}px`, height: `${size}px`, left: `${rnd() * 1080}px`, top: `${300 + rnd() * 1500}px`, opacity: (0.12 + rnd() * 0.4).toFixed(2) });
+        dust.appendChild(m);
+        const cyc = 5 + rnd() * 6;
+        tl.to(m, { y: -140 - rnd() * 160, x: (rnd() - 0.5) * 120, duration: cyc, repeat: reps(END, cyc), yoyo: true, ease: "sine.inOut" }, 0);
+      }
+      const frames = Math.round(END * 12);
+      tl.to("#grain", { x: 240, y: 170, duration: END, ease: `steps(${frames})` }, 0);
+
+      // ---- Channel bug ----
+      tl.fromTo("#bug", { opacity: 0, x: -20 }, { opacity: 0.92, x: 0, duration: 0.5, ease: "power3.out" }, 0.6);
+      tl.to("#bug", { opacity: 0, duration: 0.3 }, F.endStart);
+
+      // ---- Hook over the first shot ----
+      const hook = q("#hook");
+      const words = F.hook.split(/\s+/).filter(Boolean);
+      hook.innerHTML = words.map((w, i) => `<span class="w${i === words.length - 1 ? " hl" : ""}">${w}</span>`).join(" ");
+      const hookEnd = Math.min(F.shots[0].end - 0.25, 3.2);
+      tl.fromTo("#hook .w", { opacity: 0, filter: "blur(10px)", y: 24 }, { opacity: 1, filter: "blur(0px)", y: 0, duration: 0.2, stagger: 0.09, ease: "power3.out" }, 0.15);
+      tl.to("#hook .w", { opacity: 0, filter: "blur(8px)", duration: 0.2, stagger: 0.04, ease: "power2.in" }, hookEnd - 0.25);
+
+      // ---- On-screen graphics: big words, counters, labels ----
+      const ovs = q("#overlays");
+      const fmt = (n) => Math.round(n).toLocaleString("en-US");
+      F.shots.forEach((s, i) => {
+        const o = s.overlay;
+        if (!o || !o.kind || o.kind === "none" || i === 0) return;
+        const el = document.createElement("div");
+        el.id = `ov-${i}`;
+        const inAt = s.voiceStart + 0.15, outAt = s.end - 0.25;
+        if (o.kind === "big_text") {
+          el.className = "ov ov-big";
+          el.textContent = o.text;
+          ovs.appendChild(el);
+          tl.fromTo(el, { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.45, ease: "back.out(1.7)" }, inAt);
+        } else if (o.kind === "counter") {
+          el.className = "ov ov-count";
+          el.innerHTML = `<div class="num"><span class="v">0</span><span class="sfx"></span></div><div class="cap"></div>`;
+          el.querySelector(".sfx").textContent = (o.suffix || "").trim();
+          el.querySelector(".cap").textContent = o.text || "";
+          ovs.appendChild(el);
+          const num = el.querySelector(".v"), box = { v: 0 }, val = Number(o.value) || 0;
+          tl.fromTo(el, { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.35, ease: "power3.out" }, inAt);
+          tl.fromTo(box, { v: 0 }, { v: val, duration: 1.3, ease: "power2.out", onUpdate: () => { num.textContent = fmt(box.v); } }, inAt);
+        } else if (o.kind === "label") {
+          el.className = "ov ov-label";
+          el.textContent = o.text;
+          ovs.appendChild(el);
+          tl.fromTo(el, { opacity: 0, x: -60 }, { opacity: 1, x: 0, duration: 0.4, ease: "power3.out" }, inAt);
+        }
+        tl.to(el, { opacity: 0, filter: "blur(6px)", duration: 0.2, ease: "power2.in" }, outAt);
+        tl.set(el, { visibility: "hidden" }, outAt + 0.2);
+      });
+
+      // ---- English subtitles, a few words at a time; *word* is highlighted ----
+      const subs = q("#subs");
+      const esc = (t) => t.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+      F.subs.forEach((c, i) => {
+        const el = document.createElement("div");
+        el.className = "sub";
+        el.id = `sub-${i}`;
+        el.innerHTML = `<span>${esc(c.text).replace(/\*([^*]+)\*/g, "<b>$1</b>")}</span>`;
+        subs.appendChild(el);
+        tl.fromTo(el, { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.14, ease: "power2.out" }, c.start);
+        tl.to(el, { opacity: 0, duration: 0.1, ease: "power2.in" }, c.end - 0.1);
+        tl.set(el, { visibility: "hidden" }, c.end);
+      });
+
+      // ---- End card ----
+      const E = F.endStart;
+      tl.fromTo("#endcard", { opacity: 0 }, { opacity: 1, duration: 0.45, ease: "power2.out" }, E);
+      tl.fromTo("#endcard svg", { scale: 0.5, rotation: -8 }, { scale: 1, rotation: 0, duration: 0.6, ease: "back.out(1.8)" }, E + 0.1);
+      tl.fromTo("#end-name", { opacity: 0, y: 30, filter: "blur(8px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.35, ease: "power3.out" }, E + 0.35);
+      tl.fromTo("#end-line", { opacity: 0, y: 20 }, { opacity: 0.92, y: 0, duration: 0.35, ease: "power3.out" }, E + 0.6);
+
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>
