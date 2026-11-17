@@ -156,7 +156,7 @@ NO_OVERLAY = {"kind": "none", "text": "", "value": 0, "suffix": ""}
 
 
 def claude_token() -> str:
-    token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or (CONFIG / "claude-token").read_text().strip()
+    token = "".join((os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or (CONFIG / "claude-token").read_text()).split())  # a pasted token may carry spaces or a newline
     if not token:
         raise StepError("no Claude token: put it in ~/.config/shorts/claude-token")
     return token
