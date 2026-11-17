@@ -8,3 +8,5 @@ and an animated HyperFrames render. The result is kept as the run's artifact for
 Run by hand: Actions > render > Run workflow, with a job id and the film.json gzipped and base64-encoded.
 
 Secrets: `HF_TOKEN` (voice and pictures), `SHORTS_VOICE_SPACE` (the narrator voice Space), `CLAUDE_CODE_OAUTH_TOKEN` (only drawn explainer films).
+
+Voice G: IndicF5 by AI4Bharat (MIT), copying a storytelling clip from AI4Bharat's Rasa dataset (CC-BY-4.0), run on the runner's CPU.
