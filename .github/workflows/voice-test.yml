@@ -6,43 +6,40 @@ on:
 permissions:
   contents: read
 jobs:
-  zonos3:
+  pocket:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
-      - name: ZONOS3-Mini (C++/ggml build, CPU)
+      - name: Pocket TTS Tamil
         run: |
-          git clone -q --depth 1 --recurse-submodules --shallow-submodules https://github.com/Zyphra/ZONOS3-Mini.git "$HOME/z"
-          cd "$HOME/z/servers/ggml"
-          cmake -B build -DCMAKE_BUILD_TYPE=Release >/dev/null && cmake --build build -j4 2>&1 | tail -2
-          uvx --from huggingface_hub hf download Zyphra/ZONOS3-Mini gguf/backbone-ptq.gguf gguf/zac-keep2.gguf gguf/spk-encoder.gguf --local-dir . >/dev/null
-          mkdir -p "$GITHUB_WORKSPACE/out"; n=0
-          while IFS= read -r line; do
-            n=$((n+1)); t=$(date +%s)
-            ./build/zonos3-cli gguf/backbone-ptq.gguf --tts "$line" "$GITHUB_WORKSPACE/out/zonos3-line$n.wav" \
-              --clone "$GITHUB_WORKSPACE/voicetest/kayal.mp3" --seed 1 2>&1 | tail -3
-            echo "line $n: $(ffprobe -v error -show_entries format=duration -of csv=p=0 "$GITHUB_WORKSPACE/out/zonos3-line$n.wav")s of speech in $(( $(date +%s) - t ))s"
-          done < "$GITHUB_WORKSPACE/voicetest/lines.txt"
+          uv venv --python 3.12 .p
+          uv pip install --python .p torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install --python .p pocket-tts soundfile huggingface_hub
+          .p/bin/python voicetest/pocket.py voicetest out
       - uses: actions/upload-artifact@v4
         if: always()
-        with: {name: zonos3, path: out/, if-no-files-found: ignore}
-  omnivoice:
-    if: ${{ !contains(github.event.head_commit.message, 'zonos only') }}
+        with: {name: pocket, path: out/, if-no-files-found: ignore}
+  piper:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
-      - name: OmniVoice
+      - name: Piper Tamil (HemaLatha, Valluvar)
         run: |
-          uv venv --python 3.12 .ov
-          uv pip install --python .ov torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cpu
-          uv pip install --python .ov omnivoice soundfile
-          .ov/bin/python voicetest/omni.py voicetest out
+          uv venv --python 3.12 .pi && uv pip install --python .pi piper-tts huggingface_hub
+          mkdir -p out
+          for v in ta_IN-HemaLatha-medium ta_IN-ValluvarNeural-medium; do
+            .pi/bin/python -c "from huggingface_hub import hf_hub_download as d; [d('Jeyaram-K/piper-tamil-voices', '$v/$v.onnx' + x, local_dir='pv') for x in ('', '.json')]"
+            n=0
+            while IFS= read -r line; do
+              n=$((n+1)); t=$(date +%s.%N)
+              echo "$line" | .pi/bin/piper --model "pv/$v/$v.onnx" --config "pv/$v/$v.onnx.json" --output_file "out/piper-$v-line$n.wav" 2>/dev/null
+              echo "$v line $n: in $(echo "$(date +%s.%N) - $t" | bc)s"
+            done < voicetest/lines.txt
+          done
       - uses: actions/upload-artifact@v4
         if: always()
-        with: {name: omnivoice, path: out/, if-no-files-found: ignore}
+        with: {name: piper, path: out/, if-no-files-found: ignore}
