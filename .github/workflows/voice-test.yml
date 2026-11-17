@@ -1,5 +1,5 @@
 name: voice-test
-# Tamil voice samples on a plain CPU runner (no GPU), for the owner to compare. Runs on pushes to the voice-test branch.
+# Every candidate Tamil voice reads part 4's real script on a plain CPU runner (no GPU), for the owner to compare.
 on:
   push:
     branches: [voice-test]
@@ -8,38 +8,111 @@ permissions:
 jobs:
   pocket:
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - name: Pocket TTS Tamil
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+      - name: pocket
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          uv venv --python 3.12 .p
-          uv pip install --python .p torch --index-url https://download.pytorch.org/whl/cpu
-          uv pip install --python .p pocket-tts soundfile huggingface_hub
-          .p/bin/python voicetest/pocket.py voicetest out
+          uv venv -q --python 3.12 .e && uv pip install -q --python .e torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install -q --python .e pocket-tts soundfile huggingface_hub
+          .e/bin/python voicetest/models.py pocket voicetest/p4lines.txt out
+          voicetest/join.sh pocket
       - uses: actions/upload-artifact@v4
         if: always()
         with: {name: pocket, path: out/, if-no-files-found: ignore}
-  piper:
+  rasa:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - name: Piper Tamil (HemaLatha, Valluvar)
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+      - name: rasa
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          uv venv --python 3.12 .pi && uv pip install --python .pi piper-tts huggingface_hub
-          mkdir -p out
-          for v in ta_IN-HemaLatha-medium ta_IN-ValluvarNeural-medium; do
-            .pi/bin/python -c "from huggingface_hub import hf_hub_download as d; [d('Jeyaram-K/piper-tamil-voices', '$v/$v.onnx' + x, local_dir='pv') for x in ('', '.json')]"
-            n=0
-            while IFS= read -r line; do
-              n=$((n+1)); t=$(date +%s.%N)
-              echo "$line" | .pi/bin/piper --model "pv/$v/$v.onnx" --config "pv/$v/$v.onnx.json" --output_file "out/piper-$v-line$n.wav" 2>/dev/null
-              echo "$v line $n: in $(echo "$(date +%s.%N) - $t" | bc)s"
-            done < voicetest/lines.txt
-          done
+          uv venv -q --python 3.12 .e && uv pip install -q --python .e torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install -q --python .e 'transformers<4.50' soundfile huggingface_hub
+          .e/bin/python voicetest/models.py rasa voicetest/p4lines.txt out
+          voicetest/join.sh rasa
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: rasa, path: out/, if-no-files-found: ignore}
+  kuyil:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+      - name: kuyil
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git clone -q --depth 1 https://github.com/zhagaramlabs/kuyil ~/kuyil
+          uvx --from huggingface_hub hf download zhagaramlabs/kuyil-5m --local-dir ~/kuyil/kuyil-5m >/dev/null
+          (cd ~/kuyil && uv sync -q && uv run --with soundfile python "$GITHUB_WORKSPACE/voicetest/models.py" kuyil "$GITHUB_WORKSPACE/voicetest/p4lines.txt" "$GITHUB_WORKSPACE/out")
+          voicetest/join.sh kuyil
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: kuyil, path: out/, if-no-files-found: ignore}
+  spring:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+      - name: spring
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          uv venv -q --python 3.12 .e && uv pip install -q --python .e torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install -q --python .e git+https://github.com/ArigalaAdarsh/SPRING_F5.git soundfile 'transformers<4.50'
+          .e/bin/python voicetest/models.py spring voicetest/p4lines.txt out
+          voicetest/join.sh spring
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: spring, path: out/, if-no-files-found: ignore}
+  piper:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+      - name: piper
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          uv venv -q --python 3.12 .e && uv pip install -q --python .e piper-tts huggingface_hub
+          v=ta_IN-HemaLatha-medium; .e/bin/python -c "from huggingface_hub import hf_hub_download as d; [d('Jeyaram-K/piper-tamil-voices', '$v/$v.onnx' + x, local_dir='pv') for x in ('', '.json')]"
+          mkdir -p out; n=0
+          while IFS= read -r line; do n=$((n+1)); echo "$line" | .e/bin/piper --model pv/$v/$v.onnx --config pv/$v/$v.onnx.json --output_file out/piper-line$n.wav 2>/dev/null; done < voicetest/p4lines.txt
+          voicetest/join.sh piper
       - uses: actions/upload-artifact@v4
         if: always()
         with: {name: piper, path: out/, if-no-files-found: ignore}
+  zonos3:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+      - name: zonos3
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git clone -q --depth 1 --recurse-submodules --shallow-submodules https://github.com/Zyphra/ZONOS3-Mini.git ~/z
+          (cd ~/z/servers/ggml && cmake -B build -DCMAKE_BUILD_TYPE=Release >/dev/null && cmake --build build -j4 2>&1 | tail -1 && uvx --from huggingface_hub hf download Zyphra/ZONOS3-Mini gguf/backbone-ptq.gguf gguf/zac-keep2.gguf gguf/spk-encoder.gguf --local-dir . >/dev/null)
+          mkdir -p out; n=0
+          while IFS= read -r line; do n=$((n+1)); ~/z/servers/ggml/build/zonos3-cli ~/z/servers/ggml/gguf/backbone-ptq.gguf --tts "$line" out/zonos3-line$n.wav --clone voicetest/kayal.mp3 --seed 1 >/dev/null 2>&1; done < voicetest/p4lines.txt
+          voicetest/join.sh zonos3
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: zonos3, path: out/, if-no-files-found: ignore}
