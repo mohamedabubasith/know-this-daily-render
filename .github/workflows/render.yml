@@ -100,6 +100,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          prune-cache: false  # keep the downloaded wheels (PyTorch and friends) for the next run
           cache-dependency-glob: "requirements*.lock"
       - name: Voice model cache
         uses: actions/cache@v4
@@ -120,8 +121,8 @@ jobs:
           cd "$HOME/indic" && nohup "$HOME/indic-env/bin/uvicorn" tts_server:app --host 127.0.0.1 --port 8082 > "$HOME/indic/server.log" 2>&1 &
           for i in $(seq 1 60); do curl -sf http://127.0.0.1:8082/ >/dev/null && break; sleep 2; done
           curl -sf http://127.0.0.1:8082/ && echo " voice G server up"
-          # Load the model now, while Claude still writes the shot list (one short word warms it up).
-          curl -s -X POST http://127.0.0.1:8082/indic/jobs -H 'Content-Type: application/json' -d '{"text": "வணக்கம்.", "raw": true}' || true
+          # Load the model now, while Claude still writes the shot list (loading only: no audio is made).
+          curl -s -X POST http://127.0.0.1:8082/indic/load || true
       - name: Wait for the shot list
         env:
           GH_TOKEN: ${{ github.token }}
@@ -179,6 +180,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          prune-cache: false  # keep the downloaded wheels (PyTorch and friends) for the next run
           cache-dependency-glob: "requirements*.lock"
       - name: Python packages and token
         env:
@@ -242,6 +244,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          prune-cache: false  # keep the downloaded wheels (PyTorch and friends) for the next run
           cache-dependency-glob: "requirements*.lock"
       - name: Python packages and secrets
         env:
@@ -324,6 +327,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          prune-cache: false  # keep the downloaded wheels (PyTorch and friends) for the next run
           cache-dependency-glob: "requirements*.lock"
       - name: Python packages
         run: uv venv --python 3.13 .venv && uv pip install --python .venv -r requirements.lock
@@ -375,6 +379,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          prune-cache: false  # keep the downloaded wheels (PyTorch and friends) for the next run
           cache-dependency-glob: "requirements*.lock"
       - name: Python packages
         run: uv venv --python 3.13 .venv && uv pip install --python .venv -r requirements.lock

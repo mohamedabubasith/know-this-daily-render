@@ -127,27 +127,42 @@ def _sentences(text: str) -> list[tuple[str, float]]:
     return out or [(text, 0.0)]
 
 
+def _load() -> None:
+    """The model and the reference voice in memory (call with _model_lock held). No audio is made."""
+    global _model
+    if _model is None:
+        import os
+
+        import torch
+        from f5_tts.infer.utils_infer import preprocess_ref_audio_text
+        from transformers import AutoModel
+
+        # The model's own code fetches vocab.txt from the gated repo without passing a token.
+        os.environ.setdefault("HF_TOKEN", (Path.home() / ".config/indic/hf-token").read_text().strip())
+        torch.set_num_threads(os.cpu_count() or 4)
+        model = AutoModel.from_pretrained("ai4bharat/IndicF5", trust_remote_code=True)
+        ref = preprocess_ref_audio_text(str(INDIC / "ref.wav"), (INDIC / "ref.txt").read_text().strip())
+        _model = (model, ref)
+
+
+@app.post("/indic/load")
+def indic_load() -> dict:
+    """Start loading the model now (the GitHub voice runners do this while Claude writes the script)."""
+    def go():
+        with _model_lock:
+            _load()
+    threading.Thread(target=go, daemon=True).start()
+    return {"ok": True}
+
+
 def _indic_mp3(text: str, rate: str, raw: bool = False) -> bytes:
     """The line as MP3; raw=True: one sentence exactly as given, as a 16-bit WAV with no pause or filter (the GitHub
     render makes sentences on many runners and joins them itself)."""
-    global _model
     import numpy as np  # here, not at the top: the 8080 keepalive service runs without these packages
     import soundfile as sf
 
     with _model_lock:
-        if _model is None:
-            import os
-
-            import torch
-            from f5_tts.infer.utils_infer import preprocess_ref_audio_text
-            from transformers import AutoModel
-
-            # The model's own code fetches vocab.txt from the gated repo without passing a token.
-            os.environ.setdefault("HF_TOKEN", (Path.home() / ".config/indic/hf-token").read_text().strip())
-            torch.set_num_threads(os.cpu_count() or 4)
-            model = AutoModel.from_pretrained("ai4bharat/IndicF5", trust_remote_code=True)
-            ref = preprocess_ref_audio_text(str(INDIC / "ref.wav"), (INDIC / "ref.txt").read_text().strip())
-            _model = (model, ref)
+        _load()
         import torch
         from f5_tts.infer.utils_infer import infer_process
 
