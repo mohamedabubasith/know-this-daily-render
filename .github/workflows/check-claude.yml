@@ -1,0 +1,16 @@
+name: check-claude
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: npm install -g @anthropic-ai/claude-code >/dev/null 2>&1; claude --version
+      - env:
+          T: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          echo "length ${#T}; starts ${T:0:13}; has newline: $(printf '%s' "$T" | grep -c $'\r' || true) cr; spaces: $(printf '%s' "$T" | tr -cd ' ' | wc -c)"
+          T2=$(printf '%s' "$T" | tr -d '\r\n ')
+          CLAUDE_CODE_OAUTH_TOKEN="$T" claude -p "say ok" --model haiku 2>&1 | tail -2
+          CLAUDE_CODE_OAUTH_TOKEN="$T2" claude -p "say ok" --model haiku 2>&1 | tail -2
