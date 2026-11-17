@@ -152,8 +152,8 @@ jobs:
           path: cache/pieces/*.wav
           retention-days: 1
           if-no-files-found: ignore
-      - name: Voice server log (on failure)
-        if: failure()
+      - name: Voice server log
+        if: always() && steps.mine.outputs.lines == '1'
         run: tail -40 "$HOME/indic/server.log" || true
 
   pictures:

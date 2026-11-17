@@ -140,9 +140,11 @@ def _load() -> None:
         # The model's own code fetches vocab.txt from the gated repo without passing a token.
         os.environ.setdefault("HF_TOKEN", (Path.home() / ".config/indic/hf-token").read_text().strip())
         torch.set_num_threads(os.cpu_count() or 4)
+        t0 = time.monotonic()
         model = AutoModel.from_pretrained("ai4bharat/IndicF5", trust_remote_code=True)
         ref = preprocess_ref_audio_text(str(INDIC / "ref.wav"), (INDIC / "ref.txt").read_text().strip())
         _model = (model, ref)
+        print(f"model loaded in {time.monotonic() - t0:.0f}s", flush=True)
 
 
 @app.post("/indic/load")
@@ -169,10 +171,12 @@ def _indic_mp3(text: str, rate: str, raw: bool = False) -> bytes:
         model, (ref_audio, ref_text) = _model
         parts = []
         for sentence, pause in ([(text, 0.0)] if raw else _sentences(text)):
+            t1 = time.monotonic()
             with torch.inference_mode():
                 # 32 steps by default: the owner chose best quality (about 30 s of CPU per second of speech).
                 a, _, _ = infer_process(ref_audio, ref_text, sentence, model.ema_model, model.vocoder,
                                         mel_spec_type="vocos", speed=PACE, device="cpu", nfe_step=STEPS)
+            print(f"{len(sentence)} letters voiced in {time.monotonic() - t1:.0f}s", flush=True)
             a = np.asarray(a)
             if a.dtype == np.int16:
                 a = a.astype(np.float32) / 32768.0
