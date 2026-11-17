@@ -56,6 +56,7 @@ class TTSRequest(BaseModel):
     text: str = Field(min_length=1, max_length=MAX_CHARS)
     voice: str = DEFAULT_VOICE
     rate: str = "+0%"
+    raw: bool = False
     pitch: str = "+0Hz"
 
 
@@ -111,7 +112,8 @@ PACE = float(os.environ.get("INDIC_PACE", "0.85"))
 BREATH = {".": 0.42, "!": 0.42, "?": 0.48, "…": 0.6, "...": 0.6}  # silence after each sentence, like a voice-over artist
 # The reference clip is part of the voice too (2026-11-17: the owner chose sample G, the Rasa storytelling clip).
 _REF_ID = hashlib.sha1((INDIC / "ref.wav").read_bytes()).hexdigest()[:8] if (INDIC / "ref.wav").exists() else "none"
-VOICE_VERSION = f"paced-{PACE}-{_REF_ID}"
+STEPS = int(os.environ.get("INDIC_STEPS", "32"))  # 32 = the owner's best quality; 16 is about twice as fast
+VOICE_VERSION = f"paced-{PACE}-{_REF_ID}" + ("" if STEPS == 32 else f"-s{STEPS}")
 
 
 def _sentences(text: str) -> list[tuple[str, float]]:
@@ -126,7 +128,9 @@ def _sentences(text: str) -> list[tuple[str, float]]:
     return out or [(text, 0.0)]
 
 
-def _indic_mp3(text: str, rate: str) -> bytes:
+def _indic_mp3(text: str, rate: str, raw: bool = False) -> bytes:
+    """The line as MP3; raw=True: one sentence exactly as given, as a 16-bit WAV with no pause or filter (the GitHub
+    render makes sentences on many runners and joins them itself)."""
     global _model
     import numpy as np  # here, not at the top: the 8080 keepalive service runs without these packages
     import soundfile as sf
@@ -150,17 +154,20 @@ def _indic_mp3(text: str, rate: str) -> bytes:
 
         model, (ref_audio, ref_text) = _model
         parts = []
-        for sentence, pause in _sentences(text):
+        for sentence, pause in ([(text, 0.0)] if raw else _sentences(text)):
             with torch.inference_mode():
-                # 32 steps: the owner chose best quality (about 30 s of CPU per second of speech on this box).
+                # 32 steps by default: the owner chose best quality (about 30 s of CPU per second of speech).
                 a, _, _ = infer_process(ref_audio, ref_text, sentence, model.ema_model, model.vocoder,
-                                        mel_spec_type="vocos", speed=PACE, device="cpu", nfe_step=32)
+                                        mel_spec_type="vocos", speed=PACE, device="cpu", nfe_step=STEPS)
             a = np.asarray(a)
             if a.dtype == np.int16:
                 a = a.astype(np.float32) / 32768.0
             parts += [a.astype(np.float32), np.zeros(int(24000 * pause), dtype=np.float32)]
     audio = np.concatenate(parts)
     with tempfile.TemporaryDirectory() as tmp:
+        if raw:
+            sf.write(Path(tmp) / "raw.wav", audio, 24000, subtype="PCM_16")
+            return (Path(tmp) / "raw.wav").read_bytes()
         wav, mp3 = Path(tmp) / "a.wav", Path(tmp) / "a.mp3"
         sf.write(wav, audio.astype(np.float32), 24000)
         # Speed for the mood, trimmed silence at both ends, and a level that matches edge-tts.
@@ -178,16 +185,16 @@ class IndicRequest(BaseModel):
 
 OUT = INDIC / "out"
 _jobs: dict[str, str] = {}  # id -> "queued" | "working" | "error: ..."; finished lines are files in OUT
-_q: "queue.Queue[tuple[str, str, str]]" = queue.Queue()
+_q: "queue.Queue[tuple[str, str, str, bool]]" = queue.Queue()
 _worker: threading.Thread | None = None
 
 
 def _work() -> None:
     while True:
-        jid, text, rate = _q.get()
+        jid, text, rate, raw = _q.get()
         _jobs[jid] = "working"
         try:
-            data = _indic_mp3(text, rate)
+            data = _indic_mp3(text, rate, raw)
             tmp = OUT / f"{jid}.part"
             tmp.write_bytes(data)
             tmp.replace(OUT / f"{jid}.mp3")
@@ -205,12 +212,12 @@ def indic_submit(req: IndicRequest) -> dict:
     for old in OUT.glob("*.mp3"):  # keep a week of finished lines
         if old.stat().st_mtime < time.time() - 7 * 86400:
             old.unlink(missing_ok=True)
-    jid = hashlib.sha1(f"{VOICE_VERSION}|{req.rate}|{req.text}".encode()).hexdigest()[:16]
+    jid = hashlib.sha1(f"{VOICE_VERSION}|{req.rate}|{req.raw}|{req.text}".encode()).hexdigest()[:16]
     if (OUT / f"{jid}.mp3").exists():
         return {"id": jid, "status": "done"}
     if jid not in _jobs or _jobs[jid].startswith("error"):
         _jobs[jid] = "queued"
-        _q.put((jid, req.text, req.rate))
+        _q.put((jid, req.text, req.rate, req.raw))
     if _worker is None or not _worker.is_alive():
         _worker = threading.Thread(target=_work, daemon=True)
         _worker.start()

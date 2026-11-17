@@ -4,7 +4,8 @@ run-name: "render ${{ inputs.job_id }}"
 # Started by the Know This Daily studio (n8n): one approved plan in, one finished video out as artifacts.
 # The plan is fetched from the studio by request id, so nothing about it shows in this public run's inputs.
 # Everything slow runs at the same time on separate runners:
-#   script (Claude writes the shot list) -> voice x10 (voice G) + pictures -> prepare (music, timing, shots)
+#   script (Claude writes the shot list; voice and picture runners set up meanwhile) -> voice x16 (voice G, by
+#   sentence) + pictures x3 -> prepare (music, timing, shots)
 #   -> render x4 (stretches) -> join -> the studio is told; on any failure the report job tells it why
 on:
   workflow_dispatch:
@@ -41,7 +42,7 @@ env:
   HYPERFRAMES_NO_TELEMETRY: "1"
   SHORTS_CONFIG: ${{ github.workspace }}/.config
   JOB_ID: ${{ inputs.job_id }}
-  VOICE_PARTS: "10"
+  VOICE_PARTS: "16"
   RENDER_PARTS: "4"
 
 jobs:
@@ -82,44 +83,33 @@ jobs:
           retention-days: 30
 
   voice:
-    needs: script
     if: inputs.voice == 'g'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
       matrix:
-        part: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+        part: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     env:
-      FILM_GZ_B64: ${{ needs.script.outputs.film }}
       SHORTS_BACKUP_VOICE: "1"
       SHORTS_VOICE_SPACE: ""
     steps:
       - uses: actions/checkout@v4
-      - name: Lines for this runner
-        id: mine
-        run: |
-          n=$(echo "$FILM_GZ_B64" | base64 -d | gunzip | python3 -c "import json,sys; print(len(json.load(sys.stdin)['shots']))")
-          echo "lines=$(( n > ${{ matrix.part }} ? 1 : 0 ))" >> "$GITHUB_OUTPUT"
       - name: System packages (cached)
-        if: steps.mine.outputs.lines == '1'
         uses: awalsh128/cache-apt-pkgs-action@v1.5.3
         with:
           packages: ffmpeg
           version: "1"
           execute_install_scripts: true
       - uses: astral-sh/setup-uv@v6
-        if: steps.mine.outputs.lines == '1'
         with:
           enable-cache: true
           cache-dependency-glob: "requirements*.lock"
       - name: Voice model cache
-        if: steps.mine.outputs.lines == '1'
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
           key: indicf5-model-v1
       - name: Python packages and voice G server
-        if: steps.mine.outputs.lines == '1'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
@@ -133,25 +123,47 @@ jobs:
           cd "$HOME/indic" && nohup "$HOME/indic-env/bin/uvicorn" tts_server:app --host 127.0.0.1 --port 8082 > "$HOME/indic/server.log" 2>&1 &
           for i in $(seq 1 60); do curl -sf http://127.0.0.1:8082/ >/dev/null && break; sleep 2; done
           curl -sf http://127.0.0.1:8082/ && echo " voice G server up"
-      - name: Make my voice line
+          # Load the model now, while Claude still writes the shot list (one short word warms it up).
+          curl -s -X POST http://127.0.0.1:8082/indic/jobs -H 'Content-Type: application/json' -d '{"text": "வணக்கம்.", "raw": true}' || true
+      - name: Wait for the shot list
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # This runner set itself up while Claude wrote the shot list; it starts the moment the list is saved.
+          for i in $(seq 1 180); do
+            if gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?name=$JOB_ID-film" -q '.total_count' | grep -qx 1; then
+              gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" -n "$JOB_ID-film" -D film-in && break
+            fi
+            if gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs" -q '.jobs[] | select(.name == "script") | .conclusion' | grep -qE 'failure|cancelled'; then
+              echo "the shot list was not written"; exit 1
+            fi
+            sleep 5
+          done
+          test -f film-in/film.json
+          echo "FILM_GZ_B64=$(gzip -c film-in/film.json | base64 -w0)" >> "$GITHUB_ENV"
+      - name: Sentences for this runner
+        id: mine
+        run: echo "lines=$(python3 part.py mine ${{ matrix.part }} "$VOICE_PARTS" "job/$JOB_ID")" >> "$GITHUB_OUTPUT"
+      - name: Make my sentences
         if: steps.mine.outputs.lines == '1'
         run: .venv/bin/python part.py voice ${{ matrix.part }} "$VOICE_PARTS" "job/$JOB_ID"
       - uses: actions/upload-artifact@v4
         if: steps.mine.outputs.lines == '1'
         with:
           name: voice-${{ matrix.part }}
-          path: cache/voice/*.mp3
+          path: cache/pieces/*.wav
           retention-days: 1
+          if-no-files-found: ignore
       - name: Voice server log (on failure)
         if: failure()
         run: tail -40 "$HOME/indic/server.log" || true
 
   pictures:
-    needs: script
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    env:
-      FILM_GZ_B64: ${{ needs.script.outputs.film }}
+    strategy:
+      matrix:
+        part: [0, 1, 2]
     steps:
       - uses: actions/checkout@v4
       - name: System packages (cached)
@@ -171,11 +183,27 @@ jobs:
           uv venv --python 3.13 .venv && uv pip install --python .venv -r requirements.lock
           mkdir -p "$SHORTS_CONFIG" && chmod 700 "$SHORTS_CONFIG"
           [ -n "$HF_TOKEN" ] && printf '%s' "$HF_TOKEN" > "$SHORTS_CONFIG/hf-token" || true
+      - name: Wait for the shot list
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # This runner set itself up while Claude wrote the shot list; it starts the moment the list is saved.
+          for i in $(seq 1 180); do
+            if gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?name=$JOB_ID-film" -q '.total_count' | grep -qx 1; then
+              gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" -n "$JOB_ID-film" -D film-in && break
+            fi
+            if gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs" -q '.jobs[] | select(.name == "script") | .conclusion' | grep -qE 'failure|cancelled'; then
+              echo "the shot list was not written"; exit 1
+            fi
+            sleep 5
+          done
+          test -f film-in/film.json
+          echo "FILM_GZ_B64=$(gzip -c film-in/film.json | base64 -w0)" >> "$GITHUB_ENV"
       - name: Make the pictures
-        run: .venv/bin/python part.py pictures "job/$JOB_ID"
+        run: .venv/bin/python part.py pictures ${{ matrix.part }} 3 "job/$JOB_ID"
       - uses: actions/upload-artifact@v4
         with:
-          name: pictures
+          name: pictures-${{ matrix.part }}
           path: cache/pictures/*.jpg
           retention-days: 1
           if-no-files-found: ignore
@@ -219,20 +247,21 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: voice-*
-          path: cache/voice
+          path: cache/pieces
           merge-multiple: true
       - name: Pictures from the pictures runner
         uses: actions/download-artifact@v4
         with:
-          name: pictures
+          pattern: pictures-*
           path: cache/pictures
+          merge-multiple: true
       - name: Prepare the film
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           SHORTS_VOICE_SPACE: ${{ inputs.voice == 'kayal' && secrets.SHORTS_VOICE_SPACE || '' }}
           SHORTS_BACKUP_VOICE: ${{ inputs.voice == 'g' && '1' || '' }}
         run: |
-          echo "voice lines ready: $(ls cache/voice 2>/dev/null | wc -l), pictures ready: $(ls cache/pictures | wc -l)"
+          echo "voice sentences ready: $(ls cache/pieces 2>/dev/null | wc -l), pictures ready: $(ls cache/pictures | wc -l)"
           .venv/bin/python part.py prepare "job/$JOB_ID"
       - uses: actions/upload-artifact@v4
         with:

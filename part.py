@@ -1,7 +1,8 @@
 """One part of a video, made on its own GitHub Actions runner so the slow parts run at the same time.
 
-  python part.py voice K N JOB_DIR    voice lines K, K+N, K+2N, ... (voice G, IndicF5 on this runner)
-  python part.py pictures JOB_DIR     every picture
+  python part.py mine K N JOB_DIR     1 if voice runner K of N has sentences to make, else 0
+  python part.py voice K N JOB_DIR    voice runner K's sentences (voice G, IndicF5 on this runner), to cache/pieces
+  python part.py pictures K N JOB_DIR the pictures of shots K, K+N, K+2N, ...
   python part.py prepare JOB_DIR      the HyperFrames project (timing, music, shots), from the lines and pictures
   python part.py chunk K N JOB_DIR    render stretch K of N of the film to JOB_DIR/chunk-K.mp4
   python part.py join N JOB_DIR       stitch the stretches, lay the one soundtrack over them, check, preview
@@ -11,6 +12,7 @@ The film.json comes in FILM_GZ_B64 (gzip + base64).
 """
 import base64
 import gzip
+import hashlib
 import json
 import os
 import re
@@ -32,6 +34,64 @@ def duration() -> float:
     return float(re.search(r'data-duration="([\d.]+)"', (project / "index.html").read_text()).group(1))
 
 
+def sentences(text: str) -> list[tuple[str, float]]:
+    """A line in sentences, each with the pause after it: the same cut as indic/tts_server.py makes."""
+    breath = {".": 0.42, "!": 0.42, "?": 0.48, "…": 0.6, "...": 0.6}
+    out = []
+    for m in re.finditer(r"(.+?)(\.\.\.|…|[.!?])(?=\s|$)|(.+?)$", text.strip(), re.S):
+        body = (m.group(1) or m.group(3) or "").strip()
+        end = m.group(2) or ""
+        if body:
+            out.append((body + (end if end in ".!?" else ","), breath.get(end, 0.0)))
+    return out or [(text, 0.0)]
+
+
+def piece(ta: str, j: int) -> Path:
+    return cache / "pieces" / (hashlib.sha1(f"{p.INDIC_VOICE}|{os.environ.get('INDIC_STEPS', '32')}|{ta}|{j}".encode()).hexdigest()[:16] + ".wav")
+
+
+def share(k: int, n: int) -> list[tuple[str, int, str]]:
+    """Runner k's sentences. Every sentence of the film, longest first, each to the runner with the least text so far:
+    the slowest runner, which the whole video waits for, gets as little as possible. Every runner works it out alike."""
+    units = sorted(((s["ta"], j, t) for s in film["shots"] for j, (t, _) in enumerate(sentences(s["ta"]))), key=lambda u: -len(u[2]))
+    load, mine = [0] * n, []
+    for u in units:
+        r = load.index(min(load))
+        load[r] += len(u[2]) + 20  # each sentence also costs a fixed start-up
+        if r == k:
+            mine.append(u)
+    return mine
+
+
+def join_voice() -> None:
+    """Each line from its sentence pieces, with the pauses and the filter the voice server uses on a whole line,
+    into the voice cache, where make_video finds it."""
+    for s in film["shots"]:
+        f = cache / "voice" / (hashlib.sha1(f"{p.INDIC}|{p.INDIC_VOICE}|{s['mood']}|{s['ta']}".encode()).hexdigest()[:16] + ".mp3")
+        if f.exists():
+            continue
+        f.parent.mkdir(parents=True, exist_ok=True)
+        lst = work / "pieces.txt"
+        rows = []
+        for j, (_, pause) in enumerate(sentences(s["ta"])):
+            if not piece(s["ta"], j).exists():
+                sys.exit(f"voice piece missing: line {s['ta'][:40]}, sentence {j + 1}")
+            rows.append(f"file '{piece(s['ta'], j)}'")
+            if pause:
+                gap = work / f"gap-{pause}.wav"
+                if not gap.exists():
+                    p.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono", "-t", str(pause),
+                           "-c:a", "pcm_s16le", str(gap)], "silence")
+                rows.append(f"file '{gap}'")
+        lst.write_text("\n".join(rows) + "\n")
+        m = re.fullmatch(r"([+-]\d+)%", p.PROSODY.get(s["mood"], ("+0%",))[0].strip())
+        speed = min(1.06, max(0.94, 1 + int(m.group(1)) / 100)) if m else 1.0
+        af = (f"atempo={speed:.3f},silenceremove=start_periods=1:start_threshold=-45dB,"
+              "areverse,silenceremove=start_periods=1:start_threshold=-45dB,areverse,loudnorm=I=-16:TP=-1.5")
+        p.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst), "-af", af, "-ar", "24000",
+               "-ac", "1", "-b:a", "96k", str(f)], "voice line")
+
+
 def stretch(k: int, n: int) -> tuple[float, float]:
     """Stretch k of n, cut on whole frames so the stitched film has no gap or doubled frame."""
     frames = round(duration() * FPS)
@@ -39,19 +99,40 @@ def stretch(k: int, n: int) -> tuple[float, float]:
     return a / FPS, b / FPS
 
 
-if kind == "voice":
+if kind == "mine":
+    print(1 if share(int(sys.argv[2]), int(sys.argv[3])) else 0)
+
+elif kind == "voice":
     k, n = int(sys.argv[2]), int(sys.argv[3])
-    mine = [s for i, s in enumerate(film["shots"]) if i % n == k]
-    print(f"voice part {k + 1}/{n}: {len(mine)} lines", flush=True)
-    if mine:
-        lengths, engine = p.voices({**film, "shots": mine}, work, cache / "voice")
-        print(f"made with {engine}: {[round(x, 1) for x in lengths]}", flush=True)
+    mine = share(k, n)
+    print(f"voice runner {k + 1}/{n}: {len(mine)} sentences, {sum(len(u[2]) for u in mine)} letters", flush=True)
+    (cache / "pieces").mkdir(parents=True, exist_ok=True)
+    for ta, j, text in mine:
+        t = time.monotonic()
+        code, body = p._local_call("POST", "/indic/jobs", {"text": text, "raw": True})
+        if code != 200:
+            sys.exit(f"voice server refused: {code} {body[:200]!r}")
+        jid = json.loads(body)["id"]
+        while True:
+            code, body = p._local_call("GET", f"/indic/jobs/{jid}", timeout=60)
+            if code == 200 and len(body) > 1000:
+                piece(ta, j).write_bytes(body)
+                break
+            if code not in (202,):
+                sys.exit(f"voice failed: {code} {body[:300]!r}")
+            time.sleep(2)
+        print(f"  {len(text)} letters in {time.monotonic() - t:.0f}s", flush=True)
 
 elif kind == "pictures":
-    print("pictures:", p.pictures(film, work, cache / "pictures"), flush=True)
+    k, n = int(sys.argv[2]), int(sys.argv[3])
+    # Other runners' shots count as animated here, so every shot keeps its own index and picture seed.
+    shots = [s if i % n == k else {**s, "kind": "anim"} for i, s in enumerate(film["shots"])]
+    print("pictures:", p.pictures({**film, "shots": shots}, work, cache / "pictures"), flush=True)
 
 elif kind == "prepare":
     t = time.monotonic()
+    if os.environ.get("SHORTS_BACKUP_VOICE") == "1":  # voice G: the sentences came from the voice runners
+        join_voice()
     lengths, engine = p.voices(film, work, cache / "voice")
     sources = p.pictures(film, work, cache / "pictures")
     plan_t = p.timeline(film, lengths)
