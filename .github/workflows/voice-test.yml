@@ -23,7 +23,7 @@ jobs:
           while IFS= read -r line; do
             n=$((n+1)); t=$(date +%s)
             ./build/zonos3-cli gguf/backbone-ptq.gguf --tts "$line" "$GITHUB_WORKSPACE/out/zonos3-line$n.wav" \
-              --clone "$GITHUB_WORKSPACE/voicetest/kayal.mp3" --language ta --seed 1 2>&1 | tail -1
+              --clone "$GITHUB_WORKSPACE/voicetest/kayal.mp3" --seed 1 2>&1 | tail -3
             echo "line $n: $(ffprobe -v error -show_entries format=duration -of csv=p=0 "$GITHUB_WORKSPACE/out/zonos3-line$n.wav")s of speech in $(( $(date +%s) - t ))s"
           done < "$GITHUB_WORKSPACE/voicetest/lines.txt"
       - uses: actions/upload-artifact@v4
