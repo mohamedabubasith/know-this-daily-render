@@ -356,6 +356,7 @@ jobs:
 
   render:
     needs: [script, prepare]
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}  # draw is skipped for picture films; that must not skip this
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -417,6 +418,7 @@ jobs:
 
   join:
     needs: [script, render]
+    if: ${{ !cancelled() && needs.render.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
