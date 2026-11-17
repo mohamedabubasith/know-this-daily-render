@@ -15,12 +15,13 @@ jobs:
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
       - name: ZONOS3-Mini
         run: |
-          git clone -q --depth 1 https://github.com/Zyphra/ZONOS3-Mini.git "$HOME/z"
+          git clone -q --depth 1 --recurse-submodules --shallow-submodules https://github.com/Zyphra/ZONOS3-Mini.git "$HOME/z"
           cd "$HOME/z" && uv run --package zonos3 python "$GITHUB_WORKSPACE/voicetest/zonos.py" "$GITHUB_WORKSPACE/voicetest" "$GITHUB_WORKSPACE/out"
       - uses: actions/upload-artifact@v4
         if: always()
         with: {name: zonos3, path: out/, if-no-files-found: ignore}
   omnivoice:
+    if: ${{ !contains(github.event.head_commit.message, 'zonos only') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
