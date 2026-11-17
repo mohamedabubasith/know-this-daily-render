@@ -833,7 +833,7 @@ def voices(film: dict, work: Path, cache: Path) -> tuple[list[float], str]:
         raise StepError(_maya_why() + " The pictures already made are kept.")
     for i, f in enumerate(files):
         shutil.copy(f, work / f"line-{i}.mp3")
-    return [probe(f) for f in files], (f"Maya2 {maya_voice}" if engine == MAYA else "IndicF5 G (Rasa storytelling)" if engine == INDIC else "edge-tts")
+    return [probe(f) for f in files], (f"Maya2 {maya_voice}" if engine == MAYA else ("Maya 2 Kayal (CPU)" if INDIC_VOICE.startswith("kayal") else "IndicF5 G (Rasa storytelling)") if engine == INDIC else "edge-tts")
 
 
 # ---------------------------------------------------------------- English version

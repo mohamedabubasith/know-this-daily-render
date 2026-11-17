@@ -104,25 +104,25 @@ if kind == "mine":
     print(1 if share(int(sys.argv[2]), int(sys.argv[3])) else 0)
 
 elif kind == "voice":
+    # Kayal (indic/kayal_voice.py) was started on this runner before the script existed and has loaded the model;
+    # it waits for this runner's sentences, makes them, and marks the file .done (or .failed).
     k, n = int(sys.argv[2]), int(sys.argv[3])
     mine = share(k, n)
     print(f"voice runner {k + 1}/{n}: {len(mine)} sentences, {sum(len(u[2]) for u in mine)} letters", flush=True)
-    (cache / "pieces").mkdir(parents=True, exist_ok=True)
-    for ta, j, text in mine:
-        t = time.monotonic()
-        code, body = p._local_call("POST", "/indic/jobs", {"text": text, "raw": True})
-        if code != 200:
-            sys.exit(f"voice server refused: {code} {body[:200]!r}")
-        jid = json.loads(body)["id"]
-        while True:
-            code, body = p._local_call("GET", f"/indic/jobs/{jid}", timeout=60)
-            if code == 200 and len(body) > 1000:
-                piece(ta, j).write_bytes(body)
-                break
-            if code not in (202,):
-                sys.exit(f"voice failed: {code} {body[:300]!r}")
-            time.sleep(2)
-        print(f"  {len(text)} letters in {time.monotonic() - t:.0f}s", flush=True)
+    units = Path(os.path.expanduser("~/units.json"))
+    tmp = units.with_suffix(".part")
+    tmp.write_text(json.dumps([{"text": text, "out": str(piece(ta, j))} for ta, j, text in mine], ensure_ascii=False))
+    tmp.replace(units)
+    end = time.monotonic() + 2400
+    while not Path(str(units) + ".done").exists():
+        if Path(str(units) + ".failed").exists():
+            sys.exit("Kayal failed:\n" + Path(str(units) + ".failed").read_text())
+        if time.monotonic() > end:
+            sys.exit("Kayal took more than 40 minutes")
+        time.sleep(2)
+    missing = [str(piece(ta, j)) for ta, j, _ in mine if not piece(ta, j).exists()]
+    if missing:
+        sys.exit(f"voice pieces missing: {missing[:3]}")
 
 elif kind == "pictures":
     k, n = int(sys.argv[2]), int(sys.argv[3])
