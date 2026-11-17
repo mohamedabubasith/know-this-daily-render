@@ -358,13 +358,24 @@ def revise_film(film: dict, change: str) -> tuple[dict, dict]:
     return trend_tags(film2), usage
 
 
+LETTERS = dict(zip("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "ஏ பி சி டி ஈ எஃப் ஜி ஹெச் ஐ ஜே கே எல் எம் என் ஓ பி க்யூ ஆர் எஸ் டி யூ வி டபிள்யூ எக்ஸ் வை இசட்".split()))
+
+
+def speakable(ta: str) -> str:
+    """The narration as the voice can read it: English letters (AI, DNA) become their Tamil letter names with spaces
+    (ஏ ஐ), and hyphens, brackets, quotes and emoji go. The prompt asks for this; this catches what slips through."""
+    ta = re.sub(r"[A-Za-z]+", lambda m: " " + " ".join(LETTERS[c] for c in m.group(0).upper()) + " ", ta)
+    ta = re.sub(r"[-–—_()\[\]{}\"“”‘’*#/\\|<>]+|[\U0001F000-\U0001FAFF\u2600-\u27BF]", " ", ta)
+    return re.sub(r"\s+([,.!?…])", r"\1", re.sub(r"\s{2,}", " ", ta)).strip()
+
+
 def clean_film(film: dict) -> dict:
     """Guard the engine against small slips in Claude's JSON."""
     tags = [h if h.startswith("#") else f"#{h}" for h in film.get("hashtags", [])]
     musts = ["#shorts", "#kidsstory", "#storiesforkids", "#knowthisdaily"] if film.get("for_kids") else \
         ["#shorts", "#tamil", "#knowthisdaily"]
     tags = musts + [t for t in tags if t.lower() not in musts]  # musts first, so the cap never drops them
-    film["hashtags"] = [re.sub(r"\s+", "", t) for t in tags][:12]
+    film["hashtags"] = list(dict.fromkeys(re.sub(r"\s+", "", t) for t in tags))[:6]
     en = [h if h.startswith("#") else f"#{h}" for h in film.get("en_hashtags", [])]
     en_musts = ["#shorts", "#kidsstory", "#storiesforkids", "#knowthisdaily"] if film.get("for_kids") else \
         ["#shorts", "#facts", "#knowthisdaily"]
@@ -375,6 +386,8 @@ def clean_film(film: dict) -> dict:
     film["title"] = film["title"].strip()[:100]
     film["hook"] = " ".join(film["hook"].split()[:7]) or "Know this"
     none = {"kind": "none", "text": "", "value": 0, "suffix": ""}
+    for s in film["shots"]:
+        s["ta"] = speakable(s["ta"])
     for i, s in enumerate(film["shots"]):
         if s.get("kind") == "scene":  # explainer: programmed scenes stay; only the subtitle highlight is tidied
             s["en"] = re.sub(r"\*([^*]*\s[^*]*)\*", r"\1", s["en"])
@@ -431,15 +444,16 @@ def trend_tags(film: dict) -> dict:
             tags.append(s)
             size += len(s) + 3
     film["tags"] = tags
-    # Hashtags: the fixed ones, then short searched phrases, then Claude's topic tags; 12 at most.
+    # Hashtags: the fixed ones, Claude's specific topic tags, then one searched phrase if room; 6 at most (a few
+    # precise tags beat many broad ones).
     musts = [h for h in film["hashtags"] if h.lower() in ("#shorts", "#kidsstory", "#storiesforkids", "#knowthisdaily", "#tamil")]
     searched = ["#" + re.sub(r"[^a-z0-9]", "", s) for s in found if len(s.split()) <= 3]
     rest = [h for h in film["hashtags"] if h not in musts]
     out = []
-    for h in musts + searched[:5] + rest:
+    for h in musts + rest + searched[:1]:
         if len(h) > 2 and h.lower() not in (x.lower() for x in out):
             out.append(h)
-    film["hashtags"] = out[:12]
+    film["hashtags"] = out[:6]
     en_out = []
     for h in film.get("en_hashtags", [])[:3] + [x for x in searched[:6] if "tamil" not in x] + film.get("en_hashtags", [])[3:]:
         if len(h) > 2 and h.lower() not in (x.lower() for x in en_out):
@@ -632,7 +646,7 @@ async def _speak(text: str, voice: str, mood: str, mp3: Path) -> None:
 
 
 INDIC = "indicf5"  # the channel narrator: IndicF5 on CPU, on the TTS box and on this box at the same time
-INDIC_VOICE = os.environ.get("SHORTS_INDIC_VOICE", "rasa-book-0.85")  # sample G, the owner's pick 2026-11-17  # = VOICE_VERSION in tts_server.py: new pace, new lines
+INDIC_VOICE = os.environ.get("SHORTS_INDIC_VOICE", "rasa-book-0.80")  # sample G, the owner's pick 2026-11-17  # = VOICE_VERSION in tts_server.py: new pace, new lines
 LOCAL_INDIC = os.environ.get("SHORTS_LOCAL_INDIC", "http://127.0.0.1:8082")  # indic-local.service on this box
 INDIC_WAIT = 75 * 60   # give up after this (both boxes resting for long); Try again reuses finished lines
 PER_WORKER = 2         # lines handed to each box at once: one being made, one waiting, so neither idles

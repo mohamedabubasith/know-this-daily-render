@@ -356,6 +356,7 @@ jobs:
 
   render:
     needs: [script, prepare]
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}  # draw is skipped for picture films; that must not skip this
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -370,7 +371,7 @@ jobs:
         env:
           STUDIO_URL: ${{ secrets.STUDIO_URL }}
         run: |
-          curl -fsS -m 20 -X POST "$STUDIO_URL?p=/gh/render" -H 'Content-Type: application/json' -d "{\"job\":\"$JOB_ID\",\"step\":\"render\"}" >/dev/null || true
+          curl -fsS -m 20 -X POST "$STUDIO_URL?p=/gh/render" -H 'Content-Type: application/json' -d "{\"job\":\"$JOB_ID\",\"run\":\"$GITHUB_RUN_ID\",\"step\":\"render\"}" >/dev/null || true
       - name: ffmpeg cache
         uses: actions/cache@v4
         with:
@@ -417,6 +418,7 @@ jobs:
 
   join:
     needs: [script, render]
+    if: ${{ !cancelled() && needs.render.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -427,7 +429,7 @@ jobs:
         env:
           STUDIO_URL: ${{ secrets.STUDIO_URL }}
         run: |
-          curl -fsS -m 20 -X POST "$STUDIO_URL?p=/gh/render" -H 'Content-Type: application/json' -d "{\"job\":\"$JOB_ID\",\"step\":\"preview\"}" >/dev/null || true
+          curl -fsS -m 20 -X POST "$STUDIO_URL?p=/gh/render" -H 'Content-Type: application/json' -d "{\"job\":\"$JOB_ID\",\"run\":\"$GITHUB_RUN_ID\",\"step\":\"preview\"}" >/dev/null || true
       - name: ffmpeg cache
         uses: actions/cache@v4
         with:
@@ -498,6 +500,7 @@ jobs:
           else:
               body = {"ok": False, "cancelled": True, "error": "the render was stopped"}
           body["job"] = os.environ["JOB_ID"]
+          body["run"] = os.environ["GITHUB_RUN_ID"]  # a replaced run's report is ignored
           req = urllib.request.Request(os.environ["STUDIO_URL"] + "?p=/gh/render", data=json.dumps(body).encode(),
                                        headers={"Content-Type": "application/json"}, method="POST")
           print(urllib.request.urlopen(req, timeout=60).read()[:200])
