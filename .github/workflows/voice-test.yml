@@ -1,72 +1,25 @@
 name: voice-test
-# Every candidate Tamil voice reads part 4's real script on a plain CPU runner (no GPU), for the owner to compare.
+# Kayal (Maya 2 Native, Apache-2.0) on a plain CPU runner: no GPU. Reads part 4's real script.
 on:
   push:
     branches: [voice-test]
 permissions:
   contents: read
 jobs:
-  pocket:
+  kayal:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - name: ffmpeg (self-contained)
+      - name: Kayal on CPU
         run: |
-          mkdir -p ~/ff && curl -fsSL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz | tar -xJ --strip-components=1 -C ~/ff
-          echo "$HOME/ff/bin" >> "$GITHUB_PATH"
-      - name: pocket
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          uv venv -q --python 3.12 .e && uv pip install -q --python .e torch --index-url https://download.pytorch.org/whl/cpu
-          uv pip install -q --python .e pocket-tts soundfile huggingface_hub
-          .e/bin/python voicetest/models.py pocket voicetest/p4lines.txt out
-          voicetest/join.sh pocket
+          git clone -q --depth 1 https://github.com/MayaResearch/maya2-native voicetest/maya
+          uv venv -q --python 3.12 .e
+          uv pip install -q --python .e "torch==2.8.0" "torchaudio==2.8.0" --index-url https://download.pytorch.org/whl/cpu
+          uv pip install -q --python .e "transformers==5.6.2" "tokenizers>=0.22,<0.23" numpy scipy soundfile "huggingface_hub>=1.0" safetensors pyyaml
+          mkdir -p out
+          .e/bin/python -I voicetest/kayal_cpu.py voicetest/p4lines.txt out/kayal-cpu-part4.wav
       - uses: actions/upload-artifact@v4
         if: always()
-        with: {name: pocket, path: out/, if-no-files-found: ignore}
-  spring:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - name: ffmpeg (self-contained)
-        run: |
-          mkdir -p ~/ff && curl -fsSL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz | tar -xJ --strip-components=1 -C ~/ff
-          echo "$HOME/ff/bin" >> "$GITHUB_PATH"
-      - name: spring
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          uv venv -q --python 3.12 .e && uv pip install -q --python .e torch --index-url https://download.pytorch.org/whl/cpu
-          uv pip install -q --python .e git+https://github.com/ArigalaAdarsh/SPRING_F5.git soundfile 'transformers<4.50'
-          .e/bin/python voicetest/models.py spring voicetest/p4lines.txt out
-          voicetest/join.sh spring
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with: {name: spring, path: out/, if-no-files-found: ignore}
-  piper:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - name: ffmpeg (self-contained)
-        run: |
-          mkdir -p ~/ff && curl -fsSL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz | tar -xJ --strip-components=1 -C ~/ff
-          echo "$HOME/ff/bin" >> "$GITHUB_PATH"
-      - name: piper
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          uv venv -q --python 3.12 .e && uv pip install -q --python .e piper-tts huggingface_hub
-          v=ta_IN-HemaLatha-medium; .e/bin/python -c "from huggingface_hub import hf_hub_download as d; [d('Jeyaram-K/piper-tamil-voices', '$v/$v.onnx' + x, local_dir='pv') for x in ('', '.json')]"
-          mkdir -p out; n=0
-          while IFS= read -r line; do n=$((n+1)); echo "$line" | .e/bin/piper --model pv/$v/$v.onnx --config pv/$v/$v.onnx.json --output_file out/piper-line$n.wav 2>/dev/null; done < voicetest/p4lines.txt
-          voicetest/join.sh piper
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with: {name: piper, path: out/, if-no-files-found: ignore}
+        with: {name: kayal, path: out/, if-no-files-found: ignore}
