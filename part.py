@@ -1,6 +1,7 @@
 """One part of a video, made on its own GitHub Actions runner so the slow parts run at the same time.
 
   python part.py mine K N JOB_DIR     1 if voice runner K of N has sentences to make, else 0
+  python part.py pocket JOB_DIR       every sentence with Pocket TTS Tamil (one runner, CPU), to cache/pieces
   python part.py voice K N JOB_DIR    voice runner K's sentences (voice G, IndicF5 on this runner), to cache/pieces
   python part.py pictures K N JOB_DIR the pictures of shots K, K+N, K+2N, ...
   python part.py draw JOB_DIR         an explainer's scenes, drawn by Claude to estimated timing while the voice is made
@@ -14,6 +15,7 @@ The film.json comes in FILM_GZ_B64 (gzip + base64).
 import base64
 import gzip
 import hashlib
+import subprocess
 import json
 import os
 import re
@@ -103,6 +105,15 @@ def stretch(k: int, n: int) -> tuple[float, float]:
 if kind == "mine":
     print(1 if share(int(sys.argv[2]), int(sys.argv[3])) else 0)
 
+elif kind == "pocket":
+    units = [{"text": t, "out": str(piece(s["ta"], j))} for s in film["shots"] for j, (t, _) in enumerate(sentences(s["ta"]))]
+    (work / "units.json").write_text(json.dumps(units, ensure_ascii=False))
+    print(f"pocket: {len(units)} sentences", flush=True)
+    done = subprocess.run([os.path.expanduser("~/pocket-env/bin/python"), str(Path(__file__).parent / "indic/pocket_voice.py"),
+                           str(work / "units.json")])
+    if done.returncode:
+        sys.exit("pocket voice failed")
+
 elif kind == "voice":
     k, n = int(sys.argv[2]), int(sys.argv[3])
     mine = share(k, n)
@@ -133,7 +144,7 @@ elif kind == "pictures":
 elif kind == "draw":
     # The scenes read their clock from timing.json, so they are drawn now to estimated line lengths (voice G speaks
     # about 11 letters a second, plus each sentence's pause) and prepare rewrites timing.json with the real ones.
-    lengths = [len(s["ta"]) / 11 + sum(z for _, z in sentences(s["ta"])) for s in film["shots"]]
+    lengths = [len(s["ta"]) / 9 + sum(z for _, z in sentences(s["ta"])) for s in film["shots"]]
     plan_t = p.timeline(film, lengths)
 
     def quiet(film_, plan_, work_, out):  # no voice yet: a silent track of the right length for Claude's frame checks

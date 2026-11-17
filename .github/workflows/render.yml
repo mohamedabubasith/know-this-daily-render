@@ -4,8 +4,8 @@ run-name: "render ${{ inputs.job_id }}"
 # Started by the Know This Daily studio (n8n): one approved plan in, one finished video out as artifacts.
 # The plan is fetched from the studio by request id, so nothing about it shows in this public run's inputs.
 # Everything slow runs at the same time on separate runners:
-#   script (Claude writes the shot list; voice and picture runners set up meanwhile) -> voice x16 (voice G, by
-#   sentence) + pictures x3 -> prepare (music, timing, shots)
+#   script (Claude writes the shot list; voice and picture runners set up meanwhile) -> voice (Pocket TTS Tamil,
+#   one runner) + pictures x3 -> prepare (music, timing, shots)
 #   -> render x4 (stretches) -> join -> the studio is told; on any failure the report job tells it why
 on:
   workflow_dispatch:
@@ -42,7 +42,8 @@ env:
   HYPERFRAMES_NO_TELEMETRY: "1"
   SHORTS_CONFIG: ${{ github.workspace }}/.config
   JOB_ID: ${{ inputs.job_id }}
-  VOICE_PARTS: "16"
+  VOICE_PARTS: "1"
+  SHORTS_INDIC_VOICE: pocket-geetha  # the narrator: Pocket TTS Tamil (voice key, label and cache names)
   RENDER_PARTS: "4"
 
 jobs:
@@ -85,20 +86,15 @@ jobs:
           retention-days: 30
 
   voice:
+    # Pocket TTS Tamil (voice geetha, MIT) on one CPU runner: a whole film's sentences in well under a minute.
     if: inputs.voice == 'g'
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        part: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    timeout-minutes: 30
     env:
       SHORTS_BACKUP_VOICE: "1"
       SHORTS_VOICE_SPACE: ""
     steps:
       - uses: actions/checkout@v4
-      - name: ffmpeg, full install (the voice model loads its libraries; runs while Claude writes the script)
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
@@ -108,23 +104,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
-          key: indicf5-model-v1
-      - name: Python packages and voice G server
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          key: pocket-tts-tamil-geetha-v1
+      - name: Python packages and Pocket TTS (while Claude writes the script)
         run: |
           uv venv --python 3.13 .venv && uv pip install --python .venv -r requirements.lock
-          uv venv --python 3.11 "$HOME/indic-env"
-          uv pip install --python "$HOME/indic-env" -r requirements-indic.lock \
-            --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match
-          mkdir -p "$HOME/indic" "$HOME/.config/indic" && chmod 700 "$HOME/.config/indic"
-          cp indic/tts_server.py indic/ref.wav indic/ref.txt "$HOME/indic/"
-          printf '%s' "$HF_TOKEN" > "$HOME/.config/indic/hf-token"
-          cd "$HOME/indic" && nohup "$HOME/indic-env/bin/uvicorn" tts_server:app --host 127.0.0.1 --port 8082 > "$HOME/indic/server.log" 2>&1 &
-          for i in $(seq 1 60); do curl -sf http://127.0.0.1:8082/ >/dev/null && break; sleep 2; done
-          curl -sf http://127.0.0.1:8082/ && echo " voice G server up"
-          # Load the model now, while Claude still writes the shot list (loading only: no audio is made).
-          curl -s -X POST http://127.0.0.1:8082/indic/load || true
+          uv venv --python 3.12 "$HOME/pocket-env"
+          uv pip install --python "$HOME/pocket-env" torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install --python "$HOME/pocket-env" pocket-tts soundfile huggingface_hub
       - name: Wait for the shot list
         env:
           GH_TOKEN: ${{ github.token }}
@@ -141,22 +127,13 @@ jobs:
           done
           test -f film-in/film.json
           echo "FILM_GZ_B64=$(gzip -c film-in/film.json | base64 -w0)" >> "$GITHUB_ENV"
-      - name: Sentences for this runner
-        id: mine
-        run: echo "lines=$(python3 part.py mine ${{ matrix.part }} "$VOICE_PARTS" "job/$JOB_ID")" >> "$GITHUB_OUTPUT"
-      - name: Make my sentences
-        if: steps.mine.outputs.lines == '1'
-        run: .venv/bin/python part.py voice ${{ matrix.part }} "$VOICE_PARTS" "job/$JOB_ID"
+      - name: Make the voice
+        run: .venv/bin/python part.py pocket "job/$JOB_ID"
       - uses: actions/upload-artifact@v4
-        if: steps.mine.outputs.lines == '1'
         with:
-          name: voice-${{ matrix.part }}
+          name: voice-0
           path: cache/pieces/*.wav
           retention-days: 1
-          if-no-files-found: ignore
-      - name: Voice server log
-        if: always() && steps.mine.outputs.lines == '1'
-        run: tail -40 "$HOME/indic/server.log" || true
 
   pictures:
     runs-on: ubuntu-24.04
