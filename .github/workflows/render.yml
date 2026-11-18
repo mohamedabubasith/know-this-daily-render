@@ -53,6 +53,8 @@ jobs:
     outputs:
       film: ${{ steps.film.outputs.film }}
       format: ${{ steps.film.outputs.format }}
+      parts: ${{ steps.film.outputs.parts }}
+      nparts: ${{ steps.film.outputs.nparts }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
@@ -78,7 +80,12 @@ jobs:
         run: |
           python3 brain.py film "${{ inputs.req }}" "job/$JOB_ID"
           echo "film=$(gzip -c "job/$JOB_ID/film.json" | base64 -w0)" >> "$GITHUB_OUTPUT"
-          echo "format=$(python3 -c "import json; print(json.load(open('job/$JOB_ID/film.json')).get('format', ''))")" >> "$GITHUB_OUTPUT"
+          fmt=$(python3 -c "import json; print(json.load(open('job/$JOB_ID/film.json')).get('format', ''))")
+          echo "format=$fmt" >> "$GITHUB_OUTPUT"
+          # render runners: a 16:9 lesson (3D, Chrome on CPU) needs many; a Short renders on 4
+          n=$([ "$fmt" = lesson ] && echo 16 || echo "$RENDER_PARTS")
+          echo "nparts=$n" >> "$GITHUB_OUTPUT"
+          echo "parts=$(python3 -c "import json; print(json.dumps(list(range($n))))")" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.job_id }}-film
@@ -219,9 +226,9 @@ jobs:
 
   draw:
     needs: script
-    if: needs.script.outputs.format == 'explainer'
+    if: contains(fromJSON('["explainer","lesson"]'), needs.script.outputs.format)
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       FILM_GZ_B64: ${{ needs.script.outputs.film }}
     steps:
@@ -261,6 +268,11 @@ jobs:
         with:
           path: ~/.npm
           key: npm-hyperframes-0.9.40-${{ runner.os }}
+      - name: Browser automation (lesson scenes are checked in Chrome)
+        if: needs.script.outputs.format == 'lesson'
+        run: |
+          uv pip install -q --python .venv "playwright==1.55.0"
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"  # python3 check.py (Claude's checks) runs in this venv
       - name: Draw the scenes (Claude, while the voice is made)
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -271,6 +283,7 @@ jobs:
           path: |
             job/${{ inputs.job_id }}/project/
             !job/${{ inputs.job_id }}/project/node_modules/
+            !job/${{ inputs.job_id }}/project/still-*.jpg
           retention-days: 1
           include-hidden-files: true
 
@@ -364,7 +377,7 @@ jobs:
       FILM_GZ_B64: ${{ needs.script.outputs.film }}
     strategy:
       matrix:
-        part: [0, 1, 2, 3]
+        part: ${{ fromJSON(needs.script.outputs.parts) }}
     steps:
       - uses: actions/checkout@v4
       - name: Tell the studio
@@ -409,8 +422,11 @@ jobs:
         with:
           name: project
           path: job/${{ inputs.job_id }}
+      - name: Browser automation (lesson)
+        if: needs.script.outputs.format == 'lesson'
+        run: uv pip install -q --python .venv "playwright==1.55.0"
       - name: Render my stretch
-        run: .venv/bin/python part.py chunk ${{ matrix.part }} "$RENDER_PARTS" "job/$JOB_ID"
+        run: .venv/bin/python part.py chunk ${{ matrix.part }} "${{ needs.script.outputs.nparts }}" "job/$JOB_ID"
       - uses: actions/upload-artifact@v4
         with:
           name: chunk-${{ matrix.part }}
@@ -463,7 +479,7 @@ jobs:
       - name: Join the stretches
         run: |
           echo "$FILM_GZ_B64" | base64 -d | gunzip > "job/$JOB_ID/film.json"
-          .venv/bin/python part.py join "$RENDER_PARTS" "job/$JOB_ID"
+          .venv/bin/python part.py join "${{ needs.script.outputs.nparts }}" "job/$JOB_ID"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.job_id }}-video
@@ -494,7 +510,7 @@ jobs:
           import json, os, urllib.request
           needs = json.loads(os.environ["NEEDS"])
           names = {"script": "writing the shot list", "voice": "the voice", "pictures": "the pictures",
-                   "prepare": "putting the film together", "render": "rendering", "join": "the final check"}
+                   "draw": "drawing the scenes", "prepare": "putting the film together", "render": "rendering", "join": "the final check"}
           bad = [k for k in names if needs.get(k, {}).get("result") == "failure"]
           if bad:
               body = {"ok": False, "error": f"{names[bad[0]]} failed on GitHub. Details: {os.environ['RUN']}"}

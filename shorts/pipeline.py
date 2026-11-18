@@ -151,6 +151,31 @@ EXPLAINER_SCHEMA = {
         "shots": {"type": "array", "minItems": 6, "maxItems": 11, "items": EXPLAINER_SHOT},
     },
 }
+POSES = ["open", "wide", "present", "point", "one", "chest", "think", "shrug", "wave", "rest"]
+LESSON_SHOT = {
+    "type": "object", "additionalProperties": False,
+    "required": ["ta", "en", "mood", "scene", "picture", "act"],
+    "properties": {"ta": {"type": "string"}, "en": {"type": "string"}, "mood": {"enum": MOODS},
+                   "scene": {"type": "integer", "minimum": 0, "maximum": 15}, "picture": {"type": "string"},
+                   "act": {"type": "array", "maxItems": 2, "items": {
+                       "type": "object", "additionalProperties": False, "required": ["at", "pose", "face"],
+                       "properties": {"at": {"type": "number", "minimum": 0, "maximum": 0.9}, "pose": {"enum": POSES},
+                                      "face": {"enum": ["", "sad"]}}}}},
+}
+LESSON_SCHEMA = {  # a 16:9 lesson with the 3D host (the owner's "Video" button)
+    "type": "object", "additionalProperties": False,
+    "required": ["hook", "title", "description", "hashtags", "tags", "en_title", "en_description", "en_hashtags",
+                 "voice", "for_kids", "shots"],
+    "properties": {
+        "for_kids": {"type": "boolean"},
+        "hook": {"type": "string"}, "title": {"type": "string"}, "description": {"type": "string"},
+        "hashtags": {"type": "array", "items": {"type": "string"}}, "tags": {"type": "array", "items": {"type": "string"}},
+        "en_title": {"type": "string"}, "en_description": {"type": "string"},
+        "en_hashtags": {"type": "array", "items": {"type": "string"}},
+        "voice": {"enum": ["female", "male"]},
+        "shots": {"type": "array", "minItems": 12, "maxItems": 36, "items": LESSON_SHOT},
+    },
+}
 NO_ANIM = {"type": "stat", "title": "", "variant": "", "unit": "", "lat": 0, "lon": 0, "items": []}
 NO_OVERLAY = {"kind": "none", "text": "", "value": 0, "suffix": ""}
 
@@ -275,6 +300,21 @@ def _explainer_shots(film: dict) -> dict:
     return film
 
 
+def _lesson_shots(film: dict) -> dict:
+    """Lesson lines in the common shot shape; scenes numbered 0, 1, 2... in order whatever Claude wrote."""
+    film["format"] = "lesson"
+    film["style"] = ""
+    film["subtitles"] = "ta"
+    seen, last = {}, None
+    for s in film["shots"]:
+        if s.get("scene") != last:
+            last = s.get("scene")
+            seen[len(seen)] = True
+        s["scene"] = len(seen) - 1
+        s.update(kind="scene", image="", anim=NO_ANIM, framing="medium", move="push_in", overlay=NO_OVERLAY, transition="cut")
+    return film
+
+
 def write_film(plan: dict, previous: list[dict] | None = None) -> tuple[dict, dict]:
     prompt = f"Approved plan:\n{json.dumps(plan, ensure_ascii=False, indent=1)}\n\n"
     if plan.get("notes"):
@@ -284,7 +324,11 @@ def write_film(plan: dict, previous: list[dict] | None = None) -> tuple[dict, di
                    "one-line reminder of it, do not repeat its facts, end by teasing what comes next only if more parts "
                    "make sense):\n" + "\n".join(f"- Part {r['part']}: \"{r['title']}\": {r['said'][:900]}" for r in previous) + "\n\n")
     prompt += _text_rule(plan.get("subtitles", "en")) + "Write the full shot list."
-    if plan.get("format") == "explainer":
+    if plan.get("format") == "lesson":
+        film, usage = claude_json((PROMPTS / "lesson.md").read_text(), prompt, LESSON_SCHEMA, "film")
+        film = clean_film(_lesson_shots(film))
+        film["brief"] = {k: plan.get(k, "") for k in ("topic", "angle", "audience", "notes", "category", "series", "part", "subtitles")}
+    elif plan.get("format") == "explainer":
         film, usage = claude_json((PROMPTS / "explainer.md").read_text(), prompt, EXPLAINER_SCHEMA, "film")
         film = clean_film(_explainer_shots(film))
         film["brief"] = {k: plan.get(k, "") for k in ("topic", "angle", "audience", "notes", "category", "series", "part", "subtitles")}
@@ -329,6 +373,18 @@ def edit_intent(film: dict, change: str) -> tuple[str, str]:
 
 
 def revise_film(film: dict, change: str) -> tuple[dict, dict]:
+    if film.get("format") == "lesson":
+        prompt = (f"Current lesson:\n{json.dumps(film, ensure_ascii=False, indent=1)}\n\nThe owner watched the video and asks for "
+                  f"this change:\n{change}\n\nReturn the full revised lesson. Keep every line the change does not touch exactly as "
+                  "it is, word for word, so its voice can be reused. If the change is only about how it looks or moves, return "
+                  "every line unchanged: the motion designer gets the owner's words too.")
+        film2, usage = claude_json((PROMPTS / "lesson.md").read_text(), prompt, LESSON_SCHEMA, "film-edit")
+        film2 = clean_film(_lesson_shots(film2))
+        for k in ("category", "series", "part", "brief"):
+            if k in film:
+                film2[k] = film[k]
+        film2["author_change"] = change
+        return trend_tags(film2), usage
     fmt, subs = edit_intent(film, change)
     switched = fmt != film.get("format", "facts")
     lines = [{k: sh.get(k, "") for k in ("ta", "en", "mood")} for sh in film["shots"]]
@@ -374,11 +430,17 @@ def clean_film(film: dict) -> dict:
     tags = [h if h.startswith("#") else f"#{h}" for h in film.get("hashtags", [])]
     musts = ["#shorts", "#kidsstory", "#storiesforkids", "#knowthisdaily"] if film.get("for_kids") else \
         ["#shorts", "#tamil", "#knowthisdaily"]
+    if film.get("format") == "lesson":  # a normal 16:9 video: never tagged as a Short
+        musts = [m for m in musts if m != "#shorts"]
+        tags = [t for t in tags if t.lower() != "#shorts"]
     tags = musts + [t for t in tags if t.lower() not in musts]  # musts first, so the cap never drops them
     film["hashtags"] = list(dict.fromkeys(re.sub(r"\s+", "", t) for t in tags))[:6]
     en = [h if h.startswith("#") else f"#{h}" for h in film.get("en_hashtags", [])]
     en_musts = ["#shorts", "#kidsstory", "#storiesforkids", "#knowthisdaily"] if film.get("for_kids") else \
         ["#shorts", "#facts", "#knowthisdaily"]
+    if film.get("format") == "lesson":
+        en_musts = [m for m in en_musts if m != "#shorts"]
+        en = [h for h in en if h.lower() != "#shorts"]
     en = en_musts + [h for h in en if h.lower() not in en_musts and "tamil" not in h.lower()]
     film["en_hashtags"] = [re.sub(r"\s+", "", h) for h in en][:12]
     film["en_title"] = (film.get("en_title") or film["title"].split("|")[-1]).strip()[:100]
@@ -1172,6 +1234,90 @@ def author_film(film: dict, plan_t: dict, work: Path, project: Path, log=print) 
                              "and check again:\n\n" + errors, "draw-fix")
         usage = _add_usage(usage, fix) if usage else fix
     mark.write_text(state)
+    return usage
+
+
+# ---------------------------------------------------------------- the lesson's 3D scenes
+
+LESSON = HERE.parent / "lesson"
+LESSON_KIT = ("stage.html", "check.py", "example.js", "dress.png", "host.vrm", "AUTHOR.md")  # host.vrm: pixiv sample, VRM licence allows redistribution and commercial use
+LESSON_DENY = [f"{t}(./{n})" for t in ("Edit", "Write") for n in (*LESSON_KIT, "lesson.json", "brief.json", "env.json")]
+
+
+def lesson_json(film: dict, starts: list[float], ends: list[float], dur: float) -> dict:
+    """What the stage reads: every line with its times, scene and gestures, and the badge text."""
+    label = (film.get("brief") or {}).get("series") or film.get("series") or ""
+    part = int(film.get("part") or 1)
+    label = f"{label} · {part:02d}" if label and part > 1 else (label or "Know This Daily")
+    return {"label": label[:40], "dur": round(dur, 3), "lines": [
+        {"ta": s["ta"], "en": s["en"], "scene": s.get("scene", i), "start": round(a, 3), "end": round(b, 3),
+         "act": [[x["at"], x["pose"]] + ([x["face"]] if x.get("face") else []) for x in s.get("act", [])]}
+        for i, (s, a, b) in enumerate(zip(film["shots"], starts, ends))]}
+
+
+def lesson_kit(stage: Path) -> None:
+    stage.mkdir(parents=True, exist_ok=True)
+    for n in LESSON_KIT:
+        shutil.copy(LESSON / n, stage / n)
+
+
+def _lesson_errors(stage: Path) -> str:
+    lesson_kit(stage)
+    done = subprocess.run(["python3", "check.py"], cwd=stage, capture_output=True, text=True, timeout=600)
+    return "" if done.returncode == 0 else (done.stdout + done.stderr)[-1500:]
+
+
+def author_lesson(film: dict, stage: Path, log=print) -> dict | None:
+    """Claude writes stations.js (the 3D props of every scene) in `stage`, checks it, looks at stills, fixes.
+    lesson.json there may hold estimated timing: the scenes time themselves to K.at(k), so real timing fits later."""
+    lesson_kit(stage)
+    (stage / "brief.json").write_text(json.dumps({**film.get("brief", {}), "title": film.get("en_title", ""), "scenes": [
+        {"scene": s["scene"], "picture": s.get("picture", ""), "lines": [x["en"] for x in film["shots"] if x["scene"] == s["scene"]]}
+        for s in film["shots"] if s.get("picture")]}, ensure_ascii=False, indent=1))
+    change = (film.get("author_change") or "").strip()
+    env = {**os.environ, "CLAUDE_CODE_OAUTH_TOKEN": claude_token(), "DISABLE_AUTOUPDATER": "1",
+           "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "CI": "1"}
+
+    def claude(prompt: str, step: str) -> dict:
+        cmd = ["claude", "-p", prompt, "--model", AUTHOR_MODEL, "--append-system-prompt", (LESSON / "AUTHOR.md").read_text(),
+               "--output-format", "json", "--permission-mode", "acceptEdits", "--no-session-persistence", "--strict-mcp-config",
+               "--allowedTools", "Read", "Write", "Edit", "Glob", "Grep", "Bash(python3 check.py)", "Bash(python3 check.py:*)",
+               "Bash(python3 check.py *)", "--disallowedTools", *LESSON_DENY, "WebFetch", "WebSearch", "Agent"]
+        done = subprocess.run(cmd, cwd=stage, env=env, capture_output=True, text=True, timeout=AUTHOR_MINUTES * 60)
+        try:
+            out = json.loads(done.stdout)
+        except json.JSONDecodeError:
+            raise StepError(f"Claude ({step}) failed: {(done.stderr or done.stdout)[-400:]}")
+        if out.get("is_error"):
+            raise StepError(f"Claude ({step}) failed: {str(out.get('result'))[:400]}")
+        u = out.get("usage") or {}
+        return {"step": step, "model": AUTHOR_MODEL, "cost_usd": round(out.get("total_cost_usd") or 0, 4),
+                "input_tokens": u.get("input_tokens", 0), "output_tokens": u.get("output_tokens", 0),
+                "cache_read_tokens": u.get("cache_read_input_tokens", 0), "cache_write_tokens": u.get("cache_creation_input_tokens", 0),
+                "seconds": round((out.get("duration_ms") or 0) / 1000, 1)}
+
+    if (stage / "stations.js").exists() and change:
+        log("redrawing the scenes")
+        usage = claude(f"The owner watched this lesson and asks for this change:\n\"\"\"\n{change}\n\"\"\"\nlesson.json and brief.json are "
+                       "current. Update stations.js so it matches them and does what the owner asks; keep what the change does not "
+                       "touch. Then check, look at a few stills, fix, and rewrite DONE.md.", "lesson-redraw")
+    elif (stage / "stations.js").exists():
+        usage = None  # a retry: the scenes are already written
+    else:
+        log("drawing the scenes")
+        usage = claude("Make the 3D scenes of this lesson. Read AUTHOR.md, example.js, brief.json and lesson.json, write "
+                       "stations.js with one entry per scene, check it, look at stills of a few scenes, fix, and finish with DONE.md.",
+                       "lesson-draw")
+    for attempt in range(2):
+        errors = _lesson_errors(stage)
+        if not errors:
+            return usage
+        if attempt:
+            raise StepError("the lesson scenes still have errors:\n" + errors[-700:])
+        log("fixing the scenes")
+        fix = claude("python3 check.py reports errors. Fix them in stations.js and run it again until it prints ok:\n\n" + errors,
+                     "lesson-fix")
+        usage = _add_usage(usage, fix) if usage else fix
     return usage
 
 

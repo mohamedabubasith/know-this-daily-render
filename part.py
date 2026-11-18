@@ -23,15 +23,18 @@ from pathlib import Path
 
 from shorts import pipeline as p
 
-FPS = 24
 kind, job = sys.argv[1], Path(sys.argv[-1]).resolve()
 film = json.loads(gzip.decompress(base64.b64decode(os.environ["FILM_GZ_B64"])))
+LESSON = film.get("format") == "lesson"  # a 16:9 lesson with the 3D host: three.js stage, not HyperFrames
+FPS = 30 if LESSON else 24
 cache = job.parent.parent / "cache"  # the same place make_video looks
 work, project = job / "work", job / "project"
 work.mkdir(parents=True, exist_ok=True)
 
 
 def duration() -> float:
+    if LESSON:
+        return float(json.loads((project / "lesson.json").read_text())["dur"])
     return float(re.search(r'data-duration="([\d.]+)"', (project / "index.html").read_text()).group(1))
 
 
@@ -93,6 +96,21 @@ def join_voice() -> None:
                "-ac", "1", "-b:a", "96k", str(f)], "voice line")
 
 
+LEAD, GAP_LINE, GAP_SCENE, TAIL = 0.5, 0.35, 0.9, 2.0  # lesson timing: seconds of quiet
+
+
+def lesson_times(lengths: list[float]) -> tuple[list[float], list[float], float]:
+    """Each line's voice start and end: a short breath between lines, a longer one where the scene changes."""
+    starts, ends, t = [], [], LEAD
+    for i, (s, d) in enumerate(zip(film["shots"], lengths)):
+        if i:
+            t += GAP_SCENE if s["scene"] != film["shots"][i - 1]["scene"] else GAP_LINE
+        starts.append(round(t, 3))
+        t += d
+        ends.append(round(t, 3))
+    return starts, ends, round(t + TAIL, 3)
+
+
 def stretch(k: int, n: int) -> tuple[float, float]:
     """Stretch k of n, cut on whole frames so the stitched film has no gap or doubled frame."""
     frames = round(duration() * FPS)
@@ -130,6 +148,20 @@ elif kind == "pictures":
     shots = [s if i % n == k else {**s, "kind": "anim"} for i, s in enumerate(film["shots"])]
     print("pictures:", p.pictures({**film, "shots": shots}, work, cache / "pictures"), flush=True)
 
+elif kind == "draw" and LESSON:
+    # The 3D scenes, written by Claude to estimated timing while the voice is made; they time themselves to each
+    # line's start (K.at), so prepare's real timing fits them.
+    sys.path.insert(0, str(Path(__file__).parent / "lesson"))
+    est = [len(s["ta"]) / 11 + sum(z for _, z in sentences(s["ta"])) for s in film["shots"]]
+    a, b, dur = lesson_times(est)
+    project.mkdir(parents=True, exist_ok=True)
+    (project / "lesson.json").write_text(json.dumps(p.lesson_json(film, a, b, dur), ensure_ascii=False, indent=1))
+    (project / "env.json").write_text(json.dumps({"fps": 30, "open": [], "beats": []}))
+    t = time.monotonic()
+    usage = p.author_lesson(film, project, lambda s: print("step:", s, flush=True))
+    (project / "usage.json").write_text(json.dumps(usage or {}))
+    print(f"scenes drawn in {(time.monotonic() - t) / 60:.1f} min", flush=True)
+
 elif kind == "draw":
     # The scenes read their clock from timing.json, so they are drawn now to estimated line lengths (voice G speaks
     # about 11 letters a second, plus each sentence's pause) and prepare rewrites timing.json with the real ones.
@@ -152,6 +184,24 @@ elif kind == "prepare":
         join_voice()
     lengths, engine = p.voices(film, work, cache / "voice")
     sources = p.pictures(film, work, cache / "pictures")
+    if LESSON:
+        sys.path.insert(0, str(Path(__file__).parent / "lesson"))
+        from envelope import envelope
+        if not (project / "stations.js").exists():
+            sys.exit("the 3D scenes were not drawn")
+        a, b, dur = lesson_times(lengths)
+        plan_t = {"duration": dur, "shots": [{"voiceStart": x, "voiceEnd": y} for x, y in zip(a, b)]}
+        (project / "assets").mkdir(parents=True, exist_ok=True)
+        p.mix_audio(film, plan_t, work, project / "assets" / "voice.mp3")
+        p.lesson_kit(project)
+        (project / "lesson.json").write_text(json.dumps(p.lesson_json(film, a, b, dur), ensure_ascii=False, indent=1))
+        (project / "env.json").write_text(json.dumps(envelope(str(work / "voice.wav"))))
+        (project / "timing.json").write_text(json.dumps(plan_t))  # the captions' clock (brain.py done)
+        scenes = film["shots"][-1]["scene"] + 1
+        (job / "prepared.json").write_text(json.dumps({"voice": engine, "picture_sources": {"3D scenes": scenes}, "shots": len(film["shots"]),
+                                                       "theme": "lesson", "prepare_minutes": round((time.monotonic() - t) / 60, 1)}))
+        print(f"prepared: {dur:.1f}s lesson, {scenes} scenes, voice {engine}", flush=True)
+        sys.exit(0)
     plan_t = p.timeline(film, lengths)
     if film.get("format") == "explainer":  # drawn by Claude to the finished voice
         p.author_film(film, plan_t, work, project, lambda s: print("step:", s, flush=True))
@@ -165,6 +215,15 @@ elif kind == "prepare":
     (job / "prepared.json").write_text(json.dumps({"voice": engine, "picture_sources": sources, "shots": len(film["shots"]),
                                                    "theme": plan_t.get("theme"), "prepare_minutes": round((time.monotonic() - t) / 60, 1)}))
     print(f"prepared: {duration():.1f}s film, voice {engine}, theme {plan_t.get('theme')}", flush=True)
+
+elif kind == "chunk" and LESSON:
+    k, n = int(sys.argv[2]), int(sys.argv[3])
+    frames = round(duration() * FPS)
+    a, b = round(frames * k / n), round(frames * (k + 1) / n)
+    print(f"render stretch {k + 1}/{n}: frames {a} to {b}", flush=True)
+    t = time.monotonic()
+    p.run([sys.executable, str(Path(__file__).parent / "lesson" / "capture.py"), str(project), "chunk", str(a), str(b), str(job / f"chunk-{k}.mp4")], "3D render")
+    print(f"stretch {k + 1}: {p.probe(job / f'chunk-{k}.mp4'):.2f}s rendered in {(time.monotonic() - t) / 60:.1f} min", flush=True)
 
 elif kind == "chunk":
     k, n = int(sys.argv[2]), int(sys.argv[3])

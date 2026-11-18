@@ -1,0 +1,320 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Catamaran:wght@600;800;900&family=Inter:wght@500;600;700&family=Fraunces:opsz,wght@9..144,700&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#0b1420;font-family:Inter,sans-serif}
+canvas{position:absolute;left:0;top:0;width:1920px;height:1080px}
+#shade{position:absolute;left:0;right:0;bottom:0;height:420px;background:linear-gradient(transparent,rgba(5,10,16,.78));pointer-events:none}
+#brand{position:absolute;left:96px;top:58px;font:700 30px Fraunces,serif;color:#F4EDE2;letter-spacing:.3px}
+#brand b{color:#4FD1C5;font-weight:700}
+#part{position:absolute;right:96px;top:50px;padding:12px 24px;border-radius:999px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);backdrop-filter:blur(8px);color:#F4EDE2;font:600 22px Inter;letter-spacing:.4px}
+#part i{font-style:normal;color:#F2B544}
+#bar{position:absolute;left:96px;top:110px;width:220px;height:3px;background:rgba(255,255,255,.12);border-radius:2px;overflow:hidden}
+#bar div{height:100%;background:linear-gradient(90deg,#4FD1C5,#F2B544);width:0}
+#cap{position:absolute;left:96px;bottom:78px;width:1120px}
+#cap .ta{font:800 54px/1.3 Catamaran,sans-serif;color:#fff;text-shadow:0 4px 24px rgba(0,0,0,.45)}
+#cap .ta span{display:inline-block;margin-right:.28em;will-change:transform,filter,opacity}
+#cap .en{margin-top:10px;font:500 24px/1.3 Inter;color:rgba(244,237,226,.62);letter-spacing:.2px}
+#num{font:700 17px Inter;letter-spacing:3px;color:#4FD1C5;margin-bottom:12px}
+</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/","@pixiv/three-vrm":"https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3/lib/three-vrm.module.min.js"}}</script>
+</head><body>
+<canvas id="gl"></canvas>
+<div id="shade"></div>
+<div id="brand">Know <b>This</b> Daily</div><div id="bar"><div></div></div>
+<div id="part"></div>
+<div id="cap"><div id="num"></div><div class="ta"></div><div class="en"></div></div>
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { FontLoader } from "three/addons/loaders/FontLoader.js";
+import { TextGeometry } from "three/addons/geometries/TextGeometry.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { BokehPass } from "three/addons/postprocessing/BokehPass.js";
+import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { VRMLoaderPlugin } from "@pixiv/three-vrm";
+
+const Q = new URLSearchParams(location.search);
+const ENV = await (await fetch("./env.json")).json();
+const LESSON = await (await fetch("./lesson.json")).json();
+const LINES = LESSON.lines, TA = LINES.map(l => l.ta), SUB = LINES.map(l => String(l.en || "").replace(/\*/g, ""));
+const START = LINES.map(l => l.start), END = LESSON.dur, N = LINES.length;
+const SEGS = LINES.map(l => [l.start, l.end]);
+const lineEnd = i => i + 1 < N ? START[i + 1] : END;
+const SCN = LINES.map(l => l.scene | 0), NS = Math.max(...SCN) + 1;
+const SS = Array.from({ length: NS }, (_, j) => START[SCN.indexOf(j)]);  // scene starts
+const sceneEnd = j => j + 1 < NS ? SS[j + 1] : END;
+const AT = Array.from({ length: NS }, (_, j) => LINES.map((l, i) => [l, i]).filter(([l]) => (l.scene | 0) === j).map(([l]) => l.start - SS[j]));
+const WARM = parseInt(Q.get("warm") || "90", 10);
+document.querySelector("#part").innerHTML = (LESSON.label || "Know This Daily").replace(/[<>&]/g, " ").replace(/(\d+)$/, "<i>$1</i>");
+
+// ---------- easing ----------
+const cl = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const out3 = x => 1 - Math.pow(1 - cl(x), 3);
+const io3 = x => { x = cl(x); return x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; };
+const back = x => { x = cl(x); const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+const sstep = x => { x = cl(x); return x * x * (3 - 2 * x); };
+let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+
+// ---------- renderer + set ----------
+const W = 1920, H = 1080;
+const R = new THREE.WebGLRenderer({ canvas: document.getElementById("gl"), antialias: true, preserveDrawingBuffer: true });
+R.setPixelRatio(1); R.setSize(W, H); R.outputColorSpace = THREE.SRGBColorSpace;
+R.shadowMap.enabled = true; R.shadowMap.type = THREE.PCFSoftShadowMap;
+R.toneMapping = THREE.ACESFilmicToneMapping; R.toneMappingExposure = 0.95;
+const set = new THREE.Scene(); const BG = 0x0b1420;
+set.background = new THREE.Color(BG); set.fog = new THREE.Fog(BG, 14, 34);
+set.environment = new THREE.PMREMGenerator(R).fromScene(new RoomEnvironment(), 0.04).texture; set.environmentIntensity = 0.55;
+const cam = new THREE.PerspectiveCamera(32, W / H, 0.1, 80);
+set.add(new THREE.HemisphereLight(0xcfe8ff, 0x1a1208, 0.5));
+const key = new THREE.DirectionalLight(0xfff1dc, 2.0); key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048); Object.assign(key.shadow.camera, { left: -8, right: 8, top: 8, bottom: -8, near: 1, far: 30 }); key.shadow.radius = 6; key.shadow.bias = -0.0004;
+set.add(key, key.target);
+const rim = new THREE.DirectionalLight(0x5fe0d4, 1.6); set.add(rim, rim.target);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(400, 60), new THREE.MeshStandardMaterial({ color: 0x0e1a26, roughness: 0.38, metalness: 0.35 }));
+floor.rotation.x = -Math.PI / 2; floor.position.set(60, -2.2, 0); floor.receiveShadow = true; set.add(floor);
+
+const TEAL = 0x1F9A93, SAF = 0xF2B544, CORAL = 0xE8604C, LAV = 0x8A7BEA, CREAM = 0xF6EFE4, INK = 0x1c1f26, GOLD = 0xE9C46A, GREEN = 0x3DBE7A;
+const gloss = (c, o = {}) => new THREE.MeshPhysicalMaterial({ color: c, roughness: 0.3, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.12, ...o });
+const metal = (c, r = 0.28) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: 1 });
+const rbox = (w, h, d, r, m) => { const x = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 5, r), m); x.castShadow = x.receiveShadow = true; return x; };
+const font = await new Promise(ok => new FontLoader().load("https://cdn.jsdelivr.net/npm/three@0.180.0/examples/fonts/helvetiker_bold.typeface.json", ok));
+const t3 = (s, size, c, depth = 0.16) => { const g = new TextGeometry(s, { font, size, depth, curveSegments: 8, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.018, bevelSegments: 4 }); g.center(); const m = new THREE.Mesh(g, gloss(c)); m.castShadow = true; return m; };
+await document.fonts.load("800 80px Catamaran"); await document.fonts.load("700 80px Inter");
+function label(text, { w = 2, h = 0.6, color = "#fff", bg = null, weight = 800, fam = "Catamaran", fill = 0.82 } = {}) {
+  const s = 256, c = document.createElement("canvas"); c.width = Math.round(w * s); c.height = Math.round(h * s);
+  const x = c.getContext("2d");
+  if (bg) { x.fillStyle = bg; x.beginPath(); x.roundRect(0, 0, c.width, c.height, c.height / 2); x.fill(); }
+  let px = c.height * 0.62; x.font = `${weight} ${px}px ${fam}`;
+  while (x.measureText(text).width > c.width * fill) { px -= 2; x.font = `${weight} ${px}px ${fam}`; }
+  x.fillStyle = color; x.textAlign = "center"; x.textBaseline = "middle"; x.fillText(text, c.width / 2, c.height / 2 + px * 0.06);
+  const tx = new THREE.CanvasTexture(c); tx.colorSpace = THREE.SRGBColorSpace; tx.anisotropy = 8;
+  return new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tx, transparent: true, toneMapped: false }));
+}
+function docTex(stripe) {
+  const c = document.createElement("canvas"); c.width = 256; c.height = 330; const x = c.getContext("2d");
+  x.fillStyle = "#f3efe8"; x.beginPath(); x.roundRect(0, 0, 256, 330, 26); x.fill();
+  x.fillStyle = stripe; x.beginPath(); x.roundRect(28, 34, 140, 22, 11); x.fill();
+  x.fillStyle = "#c9c2b6"; for (let i = 0; i < 6; i++) { x.beginPath(); x.roundRect(28, 86 + i * 36, i % 3 === 2 ? 130 : 200, 14, 7); x.fill(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const soft = (() => { const c = document.createElement("canvas"); c.width = c.height = 128; const x = c.getContext("2d"); const g = x.createRadialGradient(64, 64, 0, 64, 64, 64); g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(0.35, "rgba(255,255,255,.55)"); g.addColorStop(1, "rgba(255,255,255,0)"); x.fillStyle = g; x.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); })();
+const pop = (o, lt, at, dur = 0.55) => { const s = (o.userData.s ??= o.scale.x); const e = back((lt - at) / dur); o.scale.setScalar(Math.max(1e-4, s * e)); o.visible = lt > at; return e; };
+
+// backdrop glow + floating bokeh dust across the whole set
+for (let i = 0; i < NS; i++) {
+  const g = new THREE.Sprite(new THREE.SpriteMaterial({ map: soft, color: [TEAL, SAF, LAV, CORAL][i % 4], transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+  g.scale.set(16, 11, 1); g.position.set(i * 14 - 1, 2.5, -10); set.add(g);
+}
+{ const n = 900, p = new Float32Array(n * 3), col = new Float32Array(n * 3), cs = [new THREE.Color(0x7fe9df), new THREE.Color(0xffd27a), new THREE.Color(0xffffff)];
+  for (let i = 0; i < n; i++) { p.set([rnd() * (NS * 14 + 10) - 8, rnd() * 9 - 2, -rnd() * 16 + 3], i * 3); const c = cs[i % 3]; col.set([c.r, c.g, c.b], i * 3); }
+  const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(p, 3)); g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  var dust = new THREE.Points(g, new THREE.PointsMaterial({ size: 0.09, map: soft, vertexColors: true, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
+  set.add(dust); }
+
+// ---------- stations: one prop cluster per line, written per lesson in stations.js ----------
+function chip(scale = 1) {
+  const c = new THREE.Group();
+  c.add(rbox(2.4, 2.4, 0.42, 0.28, gloss(TEAL)));
+  const core = rbox(1.55, 1.55, 0.46, 0.16, gloss(0x116e68, { roughness: 0.18 })); c.add(core);
+  const pinM = metal(GOLD, 0.22);
+  for (let s = 0; s < 4; s++) for (let k = 0; k < 5; k++) { const p = rbox(0.16, 0.38, 0.1, 0.04, pinM); const o = -0.84 + k * 0.42, a = s * Math.PI / 2; p.position.set(Math.cos(a) * 1.36 - Math.sin(a) * o, Math.sin(a) * 1.36 + Math.cos(a) * o, 0); p.rotation.z = a + Math.PI / 2; c.add(p); }
+  const ai = t3("AI", 0.62, CREAM, 0.12); ai.position.z = 0.3; c.add(ai);
+  c.scale.setScalar(scale); return c;
+}
+const SHAKE = [];  // per line: local times of a camera shake
+const K = { THREE, gloss, metal, rbox, t3, label, docTex, soft, pop, back, out3, io3, sstep, cl, rnd, chip,
+  TEAL, SAF, CORAL, LAV, CREAM, INK, GOLD, GREEN, font };
+const ST = [], ERR = [];
+let BUILD = [];
+try { BUILD = (await import("./stations.js?v=" + Date.now())).default || []; } catch (e) { ERR.push("stations.js: " + e.message); }
+for (let i = 0; i < NS; i++) {
+  const g = new THREE.Group(); g.position.set(i * 14, 0, 0); set.add(g); SHAKE[i] = [];
+  let up = () => {};
+  try {
+    const f = BUILD[i]; if (typeof f !== "function") throw new Error("no station for this scene");
+    const r = f(g, { ...K, shake: at => SHAKE[i].push(at), at: k => AT[i][Math.min(k, AT[i].length - 1)] ?? 0, lines: AT[i].length, dur: sceneEnd(i) - SS[i] }); if (typeof r === "function") up = r;
+    up(0); up(2);
+  } catch (e) { ERR.push(`scene ${i + 1}: ${e.message}`); g.clear(); up = () => {}; }
+  ST[i] = { g, up: lt => { try { up(lt); } catch (e) { if (ERR.length < 50) ERR.push(`scene ${i + 1} at ${lt.toFixed(2)}s: ${e.message}`); } } };
+}
+window.__errors = ERR;
+for (const e of ERR) console.error("STATION " + e);
+
+// ---------- post: DOF, bloom, whip blur, grade ----------
+const comp = new EffectComposer(R);
+comp.addPass(new RenderPass(set, cam));
+const bokeh = new BokehPass(set, cam, { focus: 9.5, aperture: 0.0016, maxblur: 0.009 }); comp.addPass(bokeh);
+comp.addPass(new UnrealBloomPass(new THREE.Vector2(W, H), 0.45, 0.5, 0.97));
+comp.addPass(new OutputPass());
+const grade = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, blur: { value: 0 }, time: { value: 0 } },
+  vertexShader: "varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }",
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float blur, time; varying vec2 vUv;
+  float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233)) + time) * 43758.5453); }
+  void main(){
+    vec3 c = vec3(0.); for (int i = 0; i < 13; i++) { float o = (float(i) / 12. - .5) * blur; c += texture2D(tDiffuse, vUv + vec2(o, 0.)).rgb; } c /= 13.;
+    float ca = .0012 * length(vUv - .5); c.r = mix(c.r, texture2D(tDiffuse, vUv + vec2(ca, 0.)).r, .5); c.b = mix(c.b, texture2D(tDiffuse, vUv - vec2(ca, 0.)).b, .5);
+    vec2 d = vUv - vec2(.74, .58); c += vec3(.10, .42, .40) * .22 * exp(-dot(d * vec2(1.7, 1.), d * vec2(1.7, 1.)) * 7.);
+    float v = smoothstep(1.05, .35, length((vUv - .5) * vec2(1.25, 1.))); c *= mix(.62, 1., v);
+    c += (h(vUv * 1000.) - .5) * .035;
+    gl_FragColor = vec4(c, 1.);
+  }` });
+comp.addPass(grade);
+
+// ---------- camera path ----------
+function camPose(i, t) {
+  const lt = t - SS[i], d = sceneEnd(i) - SS[i], p = cl(lt / d), side = i % 2 ? -1 : 1;
+  const yaw = side * (0.13 - 0.12 * io3(p)), dist = 11.6 - 1.1 * io3(p), tgt = new THREE.Vector3(i * 14 + 2.15, -0.6, 0);
+  const pos = new THREE.Vector3(tgt.x + Math.sin(yaw) * dist, tgt.y + 1.15 + 0.15 * Math.sin(t * 0.4), Math.cos(yaw) * dist);
+  for (const at of SHAKE[i]) if (lt > at) { const k = Math.exp(-(lt - at) * 9) * 0.12; pos.x += k * Math.sin(lt * 70); pos.y += k * Math.cos(lt * 55); }
+  return { pos, tgt };
+}
+function camAt(t) {
+  let i = SS.findLastIndex(s => t >= s - 0.3); if (i < 0) i = 0;
+  const a = camPose(i, t); if (i === 0) return a;
+  const w = io3((t - (SS[i] - 0.3)) / 0.85); if (w >= 1) return a;
+  const b = camPose(i - 1, t); return { pos: b.pos.lerp(a.pos, w), tgt: b.tgt.lerp(a.tgt, w) };
+}
+
+// ---------- host ----------
+const host = new THREE.Scene(), hcam = new THREE.PerspectiveCamera(22, W / H, 0.1, 20);
+host.add(new THREE.HemisphereLight(0xfff3e0, 0x30404a, 1.5));
+const hk = new THREE.DirectionalLight(0xfff0dc, 2.3); hk.position.set(1.2, 2, 1.6); host.add(hk);
+const L = new GLTFLoader(); L.register(p => new VRMLoaderPlugin(p));
+const vrm = (await L.loadAsync("./host.vrm")).userData.vrm; host.add(vrm.scene); vrm.scene.rotation.y = -0.2;
+const hb = n => vrm.humanoid.getNormalizedBoneNode(n), E = vrm.expressionManager;
+const kt = await new THREE.TextureLoader().loadAsync("./dress.png"); kt.flipY = false; kt.colorSpace = THREE.SRGBColorSpace;
+vrm.scene.traverse(o => { if (!o.material) return; for (const m of [].concat(o.material)) {
+  if (m.name.startsWith("Tops_01")) { m.map = kt; if ("shadeMultiplyTexture" in m) m.shadeMultiplyTexture = kt; if (m.shadeColorFactor) m.shadeColorFactor.set(0x9aa0c8); }
+  if (m.name.startsWith("Bottoms_01") && m.color) m.color.set(0x3a2a30);
+  if (m.name.startsWith("Body_00_SKIN")) { m.color.set(0xffe9dc); m.shadeColorFactor.set(0xe0a48c); }
+  if (m.parametricRimColorFactor) { m.parametricRimColorFactor.set(0x3fb8ae); m.parametricRimFresnelPowerFactor = 3.2; m.parametricRimLiftFactor = 0.05; }
+  m.needsUpdate = true; } });
+// gown: pleated flared skirt from the waist, gold hem; follows the hips
+{ const prof = []; for (let i = 0; i <= 12; i++) { const v = i / 12; prof.push(new THREE.Vector2(0.15 + 0.3 * Math.pow(v, 1.4), -v * 0.85)); }
+  const geo = new THREE.LatheGeometry(prof, 96), pa = geo.attributes.position;
+  for (let i = 0; i < pa.count; i++) { const x = pa.getX(i), z = pa.getZ(i), y = pa.getY(i), a = Math.atan2(z, x), k = 1 + 0.06 * Math.sin(a * 18) * Math.min(1, -y * 2.2); pa.setXYZ(i, x * k, y, z * k * 0.82); }
+  geo.computeVertexNormals();
+  const sk = new THREE.Mesh(geo, new THREE.MeshToonMaterial({ color: 0x2c3478, side: THREE.DoubleSide }));
+  const hemG = new THREE.CylinderGeometry(0.458, 0.452, 0.045, 96, 1, true); hemG.scale(1, 1, 0.82);
+  const hem = new THREE.Mesh(hemG, new THREE.MeshToonMaterial({ color: 0xffd21f, side: THREE.DoubleSide })); hem.position.y = -0.83; sk.add(hem);
+  const hips = vrm.humanoid.getRawBoneNode("hips"); sk.position.set(0, 0.06, 0); hips.add(sk); }
+hcam.position.set(0, 1.3, 2.3); hcam.lookAt(0, 1.24, 0); hcam.setViewOffset(W, H, -560, 0, W, H);
+
+// poses: bone -> [x, y, z]. Right hand faces the board (screen left).
+const REST = { leftUpperArm: [-0.15, 0, -1.25], leftLowerArm: [0, -1.25, -0.1], rightUpperArm: [-0.15, 0, 1.25], rightLowerArm: [0, 1.25, 0.1], rightHand: [0, 0, 0], leftHand: [0, 0, 0] };
+const P = {
+  rest: {},
+  present: { rightUpperArm: [-0.55, 0, 0.72], rightLowerArm: [0, 1.55, 0.1], rightHand: [-0.3, 0, -0.4] },
+  point: { rightUpperArm: [-0.9, 0, 0.9], rightLowerArm: [0, 0.5, 0], rightHand: [0, 0, -0.2], _point: 1 },
+  open: { rightUpperArm: [-0.35, 0, 1.15], rightLowerArm: [0, 1.6, 0], rightHand: [1.2, 0, 0], leftUpperArm: [-0.35, 0, -1.15], leftLowerArm: [0, -1.6, 0], leftHand: [1.2, 0, 0], _open: 1 },
+  wide: { rightUpperArm: [-0.35, 0, 1.15], rightLowerArm: [0, 1.6, 0], rightHand: [-1.2, 0, 0], leftUpperArm: [-0.35, 0, -1.15], leftLowerArm: [0, -1.6, 0], leftHand: [-1.2, 0, 0], _open: 1 },
+  one: { rightUpperArm: [-0.25, 0, 1.2], rightLowerArm: [0, 2.15, 0.1], rightHand: [0, 0, 0.1], _point: 1 },
+  chest: { rightUpperArm: [-0.6, 0, 1.3], rightLowerArm: [0, 2.1, 0], rightHand: [0, 0, 0.6] },
+  think: { rightUpperArm: [-0.55, 0, 1.2], rightLowerArm: [0, 2.45, 0.1], rightHand: [0.3, 0, 0.3], _head: [-0.06, 0.1, 0.08] },
+  shrug: { rightUpperArm: [-0.2, 0, 1.0], rightLowerArm: [0, 1.3, 0], rightHand: [1.2, 0, 0], leftUpperArm: [-0.2, 0, -1.0], leftLowerArm: [0, -1.3, 0], leftHand: [1.2, 0, 0], _head: [0, 0, 0.12], _shrug: 1, _open: 1 },
+  wave: { rightUpperArm: [-0.2, 0, 1.0], rightLowerArm: [0, 2.3, 0.1], rightHand: [0, -0.2, 0.25], _wave: 1, _open: 1 },
+};
+// per line: [fraction of line, pose, face]
+const ACT = LINES.map(l => (l.act && l.act.length ? l.act : [[0.02, "open"], [0.5, "present"]]).filter(x => P[x[1]]));
+const EV = [{ t: -9, pose: "rest", face: null }];
+ACT.forEach((a, i) => a.forEach(([f, pose, face]) => EV.push({ t: START[i] + f * (lineEnd(i) - START[i]), pose, face: face || null, line: i })));
+const full = n => ({ ...REST, ...P[n] });
+const BONES = [...new Set(Object.values(P).flatMap(p => Object.keys(p)).concat(Object.keys(REST)))].filter(b => !b.startsWith("_"));
+const FING = ["Index", "Middle", "Ring", "Little"], JOINTS = ["Proximal", "Intermediate", "Distal"];
+const hasE = n => !!E.getExpression(n);
+const BLINKS = Array.from({ length: 22 }, (_, i) => 1.1 + i * 2.15 + ((i * 37) % 10) / 9);
+const beatAt = t => { let b = 0; for (const x of ENV.beats) { const d = t - x; if (d >= 0 && d < 0.45) b = Math.max(b, Math.sin(d / 0.45 * Math.PI) * (1 - d / 0.45)); } return b; };
+let mo = { aa: 0, ee: 0, oh: 0, ih: 0 }, faceW = {};
+
+function act(t) {
+  const forced = Q.get("pose");
+  let k = EV.findLastIndex(e => t >= e.t), cur = EV[k], prev = EV[Math.max(0, k - 1)];
+  let w = sstep((t - cur.t) / 0.55);
+  if (forced) { if (forced[0] === "{") { P.__x = JSON.parse(forced); cur = { pose: "__x" }; } else cur = { pose: forced }; prev = cur; w = 1; }
+  const A = full(prev.pose), B = full(cur.pose);
+  for (const b of BONES) { const a = A[b] || [0, 0, 0], c = B[b] || [0, 0, 0], n = hb(b); if (n) n.rotation.set(a[0] + (c[0] - a[0]) * w, a[1] + (c[1] - a[1]) * w, a[2] + (c[2] - a[2]) * w); }
+  const mix = key => (P[prev.pose][key] ? 1 - w : 0) + (P[cur.pose][key] ? w : 0);
+  // beats: forearm and head move with the stressed syllables
+  const bt = beatAt(t), talk = (ENV.open[Math.round(t * 30)] || 0) > 0.05;
+  const busy = mix("_point") + mix("_wave");
+  hb("rightLowerArm").rotation.y += 0.13 * bt * (1 - busy); hb("rightHand").rotation.x += -0.12 * bt * (1 - busy);
+  hb("leftLowerArm").rotation.y -= 0.06 * bt;
+  // fingers: relaxed curl, index straight while pointing
+  const pt = mix("_point"), op = mix("_open");
+  for (const side of ["right", "left"]) for (const f of FING) for (const j of JOINTS) {
+    const n = hb(side + f + j); if (!n) continue; const s = side === "right" ? 1 : -1;
+    let c = (0.25 + (j === "Proximal" ? 0.05 : 0.1)) * (1 - 0.75 * op);
+    if (side === "right" && pt > 0) c = f === "Index" ? c * (1 - pt) : c + (1.25 - c) * pt;
+    n.rotation.set(0, 0, s * c);
+  }
+  // wave
+  const wv = mix("_wave"); if (wv > 0) { hb("rightHand").rotation.z += wv * 0.35 * Math.sin(t * 9); hb("rightLowerArm").rotation.x += wv * 0.12 * Math.sin(t * 9 + 1); }
+  // shrug shoulders
+  const sh = mix("_shrug"); hb("rightShoulder") && hb("rightShoulder").rotation.set(0, 0, -0.18 * sh); hb("leftShoulder") && hb("leftShoulder").rotation.set(0, 0, 0.18 * sh);
+  // head: look at camera, glance to the board at each new line, nod on beats, tilt with pose
+  const li = START.findLastIndex(s => t >= s), since = t - START[Math.max(0, li)];
+  const glance = Math.max(0, Math.sin(cl(since / 1.1) * Math.PI)) * (li % 3 === 1 ? 0 : 1);
+  const hd = [0, 0, 0]; for (const [p, ww] of [[prev.pose, 1 - w], [cur.pose, w]]) { const x = P[p]._head; if (x) for (let i = 0; i < 3; i++) hd[i] += x[i] * ww; }
+  hb("neck").rotation.set(0.02 * Math.sin(t * 1.1) + 0.06 * bt - 0.08 * glance, 0, 0);
+  hb("head").rotation.set(hd[0] + 0.03 * Math.sin(t * 0.7), hd[1] + 0.22 * glance + 0.05 * Math.sin(t * 0.45), hd[2] + 0.035 * Math.sin(t * 0.8 + 1));
+  hb("spine").rotation.set(0.02 * Math.sin(t * 1.5), 0.04 * Math.sin(t * 0.33), 0.015 * Math.sin(t * 0.5));
+  hb("hips") && hb("hips").rotation.set(0, 0, 0.02 * Math.sin(t * 0.5));
+  // face: mouth from syllable loudness, line mood, blinks, brows up on beats
+  const o = ENV.open[Math.min(ENV.open.length - 1, Math.round(t * 30))] || 0;
+  const vow = Math.floor(t * 30 / 4) % 4;
+  const want = { aa: 0, ee: 0, oh: 0, ih: 0 };
+  if (o > 0) { const v = 0.6 * o; want[["aa", "ee", "oh", "aa"][vow]] = v; if (vow === 1) want.ih = v * 0.3; }
+  for (const x in mo) { mo[x] += (want[x] - mo[x]) * 0.7; E.setValue(x, mo[x]); }
+  const bl = BLINKS.find(b => t >= b && t < b + 0.16); E.setValue("blink", bl ? Math.sin((t - bl) / 0.16 * Math.PI) : 0);
+  for (const f of ["sad", "relaxed"]) {
+    if (!hasE(f)) continue; let v = 0;
+    if (cur.face === f) v += w; if (prev.face === f) v += 1 - w;
+    v *= f === "happy" ? 0.45 : f === "surprised" ? 0.35 : f === "sad" ? 0.3 : 0;
+    if (f === "relaxed") v = 0.35 * (1 - (cur.face ? w : 0));
+    if (f === "happy" && v > 0) v *= talk ? 0.5 : 1;
+    E.setValue(f, v);
+  }
+}
+
+// ---------- captions (word by word, timed to the voice) ----------
+const WT = TA.map((line, i) => {
+  const words = line.split(/\s+/), segs = SEGS.filter(s => s[0] >= START[i] - 0.05 && s[0] < lineEnd(i) - 0.05);
+  const tot = segs.reduce((a, s) => a + s[1] - s[0], 0), lens = words.map(w => w.length + 2), L0 = lens.reduce((a, b) => a + b, 0);
+  let acc = 0; return words.map((w, k) => { const f = acc / L0; acc += lens[k]; let rem = f * tot; for (const s of segs) { const d = s[1] - s[0]; if (rem <= d) return { w, t: s[0] + rem }; rem -= d; } return { w, t: lineEnd(i) - 0.3 }; });
+});
+let capLine = -1; const ta = document.querySelector("#cap .ta"), en = document.querySelector("#cap .en"), num = document.getElementById("num"), bar = document.querySelector("#bar div");
+function captions(t) {
+  let i = START.findLastIndex(s => t >= s - 0.12); if (i < 0) i = 0;
+  if (i !== capLine) { capLine = i; ta.innerHTML = WT[i].map(x => `<span>${x.w}</span>`).join(""); en.textContent = SUB[i]; num.textContent = String(i + 1).padStart(2, "0") + " / " + N; }
+  const sp = ta.children, out = cl((lineEnd(i) - 0.1 - t) / 0.18);
+  WT[i].forEach((x, k) => { const e = out3((t - x.t + 0.12) / 0.32), s = sp[k]; const now = t >= x.t - 0.05 && (k + 1 >= WT[i].length || t < WT[i][k + 1].t - 0.05);
+    s.style.opacity = e * out; s.style.transform = `translateY(${(1 - e) * 26}px)`; s.style.filter = `blur(${(1 - e) * 10}px)`; s.style.color = now ? "#F2B544" : "#fff"; });
+  en.style.opacity = 0.9 * out3((t - START[i]) / 0.5) * out; num.style.opacity = out3((t - START[i]) / 0.4) * out;
+  bar.style.width = (100 * t / END).toFixed(2) + "%";
+}
+
+// ---------- frame ----------
+window.renderAt = (t) => {
+  for (let i = 0; i < NS; i++) { const vis = t > SS[i] - 0.6 && t < sceneEnd(i) + 0.7; ST[i].g.visible = vis; if (vis) ST[i].up(t - SS[i]); }
+  const { pos, tgt } = camAt(t); cam.position.copy(pos); cam.lookAt(tgt);
+  key.position.copy(tgt).add(new THREE.Vector3(-5, 9, 7)); key.target.position.copy(tgt); rim.position.copy(tgt).add(new THREE.Vector3(4, 3, -6)); rim.target.position.copy(tgt);
+  dust.position.y = 0.15 * Math.sin(t * 0.3); dust.rotation.y = 0;
+  bokeh.uniforms.focus.value = pos.distanceTo(tgt) - 0.6;
+  const vx = Math.abs(pos.x - camAt(Math.max(0, t - 1 / 30)).pos.x);
+  grade.uniforms.blur.value = Math.min(0.07, vx * 0.05); grade.uniforms.time.value = (t * 30) % 97;
+  R.toneMapping = THREE.ACESFilmicToneMapping; comp.render();
+  act(t); vrm.update(1 / 30);
+  R.autoClear = false; R.toneMapping = THREE.NoToneMapping; R.clearDepth(); R.render(host, hcam); R.autoClear = true;
+  captions(t);
+};
+window.__step = t => { for (let i = 0; i < NS; i++) ST[i].up(t - SS[i]); };  // scene code only (check.py)
+const T0 = parseFloat(Q.get("t") || "0");
+for (let i = 0; i < WARM; i++) window.renderAt(Math.max(0, T0 - WARM / 30 + i / 30));
+window.__ready = true;
+</script></body></html>

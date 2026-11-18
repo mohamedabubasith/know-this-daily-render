@@ -152,9 +152,12 @@ def film(req: str, job: Path) -> None:
         f = json.loads(old.read_text())
     else:
         pl = inp["plan"]
+        if inp.get("shape") == "video":  # the owner tapped 🖥 Video: a 16:9 lesson with the 3D host
+            pl = {**pl, "format": "lesson"}
         f, usage = p.write_film(pl, series_parts(inp.get("lib") or [], pl.get("series", ""), int(pl.get("part") or 1)))
     (job / "film.json").write_text(json.dumps(f, ensure_ascii=False, indent=1))
-    studio("/gh/render", {"job": inp["job"], "step": "pictures and voice", "meta": meta_of(f), "usage": usage})
+    step = "voice and 3D scenes" if f.get("format") == "lesson" else "pictures and voice"
+    studio("/gh/render", {"job": inp["job"], "step": step, "meta": {**meta_of(f), "shape": "video" if f.get("format") == "lesson" else "short"}, "usage": usage})
     print(f"film: {f.get('title')} | {f.get('format')} | {len(f['shots'])} shots", flush=True)
 
 
