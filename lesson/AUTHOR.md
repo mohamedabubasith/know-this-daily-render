@@ -74,8 +74,9 @@ export default [
 
 - `python3 check.py` loads the stage, builds every scene and steps through it; it prints any JavaScript error with
   the scene number. Run it after writing, fix every error, run again until it prints `ok`.
-- `python3 check.py T1 T2 ...` also saves frames `still-T.jpg` at those times (seconds in the whole video; see
-  `lesson.json` for line starts). Each still takes about a minute, so look at 3 to 5 scenes, the busiest ones.
-  Read the jpgs: fix props that are off-frame, too big, hidden behind the host or the captions, or empty
-  moments.
+- `python3 check.py T1 T2 ...` also saves small frames `still-T.jpg` at those times (seconds in the whole video;
+  see `lesson.json` for line starts). Pass all the times in ONE call (4 to 6 times: the busiest scenes, a moment
+  after their last reveal). Read the jpgs: fix props that are off-frame, too big, hidden behind the host or the
+  captions, or empty moments. One round of stills, then at most one more call for the scenes you changed.
+- Work fast: the video waits for you. Write stations.js in one go, then check.
 - When it is clean, write `DONE.md`: one line per scene saying what it shows.

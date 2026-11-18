@@ -1279,15 +1279,33 @@ def author_lesson(film: dict, stage: Path, log=print) -> dict | None:
            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "CI": "1"}
 
     def claude(prompt: str, step: str) -> dict:
+        """Claude with file tools and check.py only; every tool call is printed as it happens (the job log shows progress)."""
         cmd = ["claude", "-p", prompt, "--model", AUTHOR_MODEL, "--append-system-prompt", (LESSON / "AUTHOR.md").read_text(),
-               "--output-format", "json", "--permission-mode", "acceptEdits", "--no-session-persistence", "--strict-mcp-config",
-               "--allowedTools", "Read", "Write", "Edit", "Glob", "Grep", "Bash(python3 check.py)", "Bash(python3 check.py:*)",
-               "Bash(python3 check.py *)", "--disallowedTools", *LESSON_DENY, "WebFetch", "WebSearch", "Agent"]
-        done = subprocess.run(cmd, cwd=stage, env=env, capture_output=True, text=True, timeout=AUTHOR_MINUTES * 60)
-        try:
-            out = json.loads(done.stdout)
-        except json.JSONDecodeError:
-            raise StepError(f"Claude ({step}) failed: {(done.stderr or done.stdout)[-400:]}")
+               "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits", "--no-session-persistence",
+               "--strict-mcp-config", "--allowedTools", "Read", "Write", "Edit", "Glob", "Grep", "Bash(python3 check.py)",
+               "Bash(python3 check.py:*)", "Bash(python3 check.py *)", "--disallowedTools", *LESSON_DENY, "WebFetch", "WebSearch", "Agent"]
+        t0, out, tail = time.monotonic(), None, []
+        proc = subprocess.Popen(cmd, cwd=stage, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        for line in proc.stdout:
+            tail = (tail + [line])[-5:]
+            try:
+                ev = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if ev.get("type") == "assistant":
+                for c in (ev.get("message") or {}).get("content", []):
+                    if c.get("type") == "tool_use":
+                        i = c.get("input") or {}
+                        what = i.get("command") or i.get("file_path") or i.get("pattern") or ""
+                        log(f"{(time.monotonic() - t0) / 60:4.1f} min  {c.get('name')} {str(what).replace(str(stage) + '/', '')[:120]}")
+            elif ev.get("type") == "result":
+                out = ev
+            if time.monotonic() - t0 > AUTHOR_MINUTES * 60:
+                proc.kill()
+                raise StepError(f"drawing the scenes took more than {AUTHOR_MINUTES} minutes")
+        proc.wait()
+        if not out:
+            raise StepError(f"Claude ({step}) failed: {''.join(tail)[-400:]}")
         if out.get("is_error"):
             raise StepError(f"Claude ({step}) failed: {str(out.get('result'))[:400]}")
         u = out.get("usage") or {}

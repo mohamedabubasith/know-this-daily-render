@@ -34,16 +34,18 @@ with sync_playwright() as p:
     # every scene at many moments, without drawing: only the scene code runs
     errs += pg.evaluate("""(dur) => { const out = [...window.__errors]; for (let t = 0; t < dur; t += 0.25) window.__step(t); return out.concat(window.__errors.slice(out.length)); }""", dur)
     pg.close()
-    for t in sys.argv[1:]:
-        pg = b.new_page(viewport={"width": 1920, "height": 1080})
+    if sys.argv[1:]:  # stills: one page, half size, a short warm-up (enough to judge layout)
+        pg = b.new_page(viewport={"width": 960, "height": 540}, device_scale_factor=1)
         pg.on("pageerror", lambda e: errs.append(f"page error: {e}"))
-        pg.goto(f"{url}?t={float(t):.3f}&warm=12")
+        pg.goto(f"{url}?warm=3&small=1")
         pg.wait_for_function("window.__ready === true", timeout=300000)
         pg.evaluate("document.fonts.ready")
-        pg.evaluate(f"renderAt({float(t)})")
-        pg.screenshot(path=str(d / f"still-{t}.jpg"), type="jpeg", quality=80)
+        for t in sys.argv[1:]:
+            for k in (3, 2, 1, 0):
+                pg.evaluate(f"renderAt({max(0.0, float(t) - k / 30)})")
+            pg.screenshot(path=str(d / f"still-{t}.jpg"), type="jpeg", quality=80)
+            print(f"saved still-{t}.jpg", flush=True)
         pg.close()
-        print(f"saved still-{t}.jpg", flush=True)
     b.close()
 errs = list(dict.fromkeys(errs))
 for e in errs[:30]:

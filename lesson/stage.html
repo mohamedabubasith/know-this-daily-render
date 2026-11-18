@@ -61,9 +61,10 @@ const sstep = x => { x = cl(x); return x * x * (3 - 2 * x); };
 let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 
 // ---------- renderer + set ----------
-const W = 1920, H = 1080;
+const W = 1920, H = 1080, SMALL = new URLSearchParams(location.search).get("small") === "1";
+if (SMALL) { document.documentElement.style.zoom = 0.5; }
 const R = new THREE.WebGLRenderer({ canvas: document.getElementById("gl"), antialias: true, preserveDrawingBuffer: true });
-R.setPixelRatio(1); R.setSize(W, H); R.outputColorSpace = THREE.SRGBColorSpace;
+R.setPixelRatio(SMALL ? 0.5 : 1); R.setSize(W, H); R.outputColorSpace = THREE.SRGBColorSpace;
 R.shadowMap.enabled = true; R.shadowMap.type = THREE.PCFSoftShadowMap;
 R.toneMapping = THREE.ACESFilmicToneMapping; R.toneMappingExposure = 0.95;
 const set = new THREE.Scene(); const BG = 0x0b1420;
@@ -146,7 +147,7 @@ window.__errors = ERR;
 for (const e of ERR) console.error("STATION " + e);
 
 // ---------- post: DOF, bloom, whip blur, grade ----------
-const comp = new EffectComposer(R);
+const comp = new EffectComposer(R); comp.setPixelRatio(SMALL ? 0.5 : 1);
 comp.addPass(new RenderPass(set, cam));
 const bokeh = new BokehPass(set, cam, { focus: 9.5, aperture: 0.0016, maxblur: 0.009 }); comp.addPass(bokeh);
 comp.addPass(new UnrealBloomPass(new THREE.Vector2(W, H), 0.45, 0.5, 0.97));
