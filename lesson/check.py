@@ -32,6 +32,8 @@ with sync_playwright() as p:
     pg.goto(url + "?warm=1")
     pg.wait_for_function("window.__ready === true", timeout=300000)
     # every scene at many moments, without drawing: only the scene code runs
+    for f in pg.evaluate("window.__fits || []"):
+        print("FIT", f)
     errs += pg.evaluate("""(dur) => { const out = [...window.__errors]; for (let t = 0; t < dur; t += 0.25) window.__step(t); return out.concat(window.__errors.slice(out.length)); }""", dur)
     pg.close()
     if sys.argv[1:]:  # stills: one page, half size, a short warm-up (enough to judge layout)

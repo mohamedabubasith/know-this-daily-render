@@ -55,6 +55,8 @@ jobs:
       format: ${{ steps.film.outputs.format }}
       parts: ${{ steps.film.outputs.parts }}
       nparts: ${{ steps.film.outputs.nparts }}
+      models: ${{ steps.film.outputs.models }}
+      nmodels: ${{ steps.film.outputs.nmodels }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
@@ -83,9 +85,13 @@ jobs:
           fmt=$(python3 -c "import json; print(json.load(open('job/$JOB_ID/film.json')).get('format', ''))")
           echo "format=$fmt" >> "$GITHUB_OUTPUT"
           # render runners: a 16:9 lesson (3D, Chrome on CPU) needs many; a Short renders on 4
-          n=$([ "$fmt" = lesson ] && echo 16 || echo "$RENDER_PARTS")
+          n=$([ "$fmt" = lesson ] && echo 18 || echo "$RENDER_PARTS")
           echo "nparts=$n" >> "$GITHUB_OUTPUT"
           echo "parts=$(python3 -c "import json; print(json.dumps(list(range($n))))")" >> "$GITHUB_OUTPUT"
+          # a lesson's real objects: one runner each (each runner has its own free GPU quota on Hugging Face)
+          m=$(python3 -c "import json; print(len(json.load(open('job/$JOB_ID/film.json')).get('objects') or []))")
+          echo "nmodels=$m" >> "$GITHUB_OUTPUT"
+          echo "models=$(python3 -c "import json; print(json.dumps(list(range(max(1, $m)))))")" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.job_id }}-film
@@ -224,9 +230,57 @@ jobs:
           retention-days: 1
           if-no-files-found: ignore
 
-  draw:
+  models:
+    # A lesson's real 3D models: from the library (the "models" release), or made now: Z-Image picture -> TRELLIS.2
     needs: script
-    if: contains(fromJSON('["explainer","lesson"]'), needs.script.outputs.format)
+    if: needs.script.outputs.format == 'lesson' && needs.script.outputs.nmodels != '0'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write  # a new model is added to the library release
+      actions: read
+    env:
+      FILM_GZ_B64: ${{ needs.script.outputs.film }}
+    strategy:
+      fail-fast: false
+      matrix:
+        part: ${{ fromJSON(needs.script.outputs.models) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: ffmpeg cache
+        uses: actions/cache@v4
+        with:
+          path: ~/ffmpeg-static
+          key: ffmpeg-static-btbn-n8.1-v1
+      - name: ffmpeg
+        run: |
+          if [ ! -x "$HOME/ffmpeg-static/bin/ffmpeg" ]; then
+            mkdir -p "$HOME/ffmpeg-static"
+            curl -fsSL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz | tar -xJ --strip-components=1 -C "$HOME/ffmpeg-static"
+          fi
+          echo "$HOME/ffmpeg-static/bin" >> "$GITHUB_PATH"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          prune-cache: false
+          cache-dependency-glob: "requirements*.lock"
+      - name: Python packages
+        run: uv venv -q --python 3.13 .venv && uv pip install -q --python .venv -r requirements.lock
+      - name: Make or fetch my model
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: .venv/bin/python lesson/models.py ${{ matrix.part }} "${{ needs.script.outputs.nmodels }}" models
+      - uses: actions/upload-artifact@v4
+        with:
+          name: models-${{ matrix.part }}
+          path: models/*.glb
+          retention-days: 1
+          if-no-files-found: ignore
+
+  draw:
+    needs: [script, models]
+    if: ${{ !cancelled() && needs.script.result == 'success' && contains(fromJSON('["explainer","lesson"]'), needs.script.outputs.format) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -268,6 +322,14 @@ jobs:
         with:
           path: ~/.npm
           key: npm-hyperframes-0.9.40-${{ runner.os }}
+      - name: The lesson's 3D models
+        if: needs.script.outputs.format == 'lesson'
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: models-*
+          path: job/${{ inputs.job_id }}/project/assets
+          merge-multiple: true
       - name: Browser automation (lesson scenes are checked in Chrome)
         if: needs.script.outputs.format == 'lesson'
         run: |

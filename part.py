@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -146,7 +147,12 @@ elif kind == "pictures":
     k, n = int(sys.argv[2]), int(sys.argv[3])
     # Other runners' shots count as animated here, so every shot keeps its own index and picture seed.
     shots = [s if i % n == k else {**s, "kind": "anim"} for i, s in enumerate(film["shots"])]
-    print("pictures:", p.pictures({**film, "shots": shots}, work, cache / "pictures"), flush=True)
+    try:
+        print("pictures:", p.pictures({**film, "shots": shots}, work, cache / "pictures"), flush=True)
+    except p.StepError as e:
+        if not LESSON:
+            raise
+        print("pictures skipped (a lesson shows its 3D scenes without them):", e, flush=True)
 
 elif kind == "draw" and LESSON:
     # The 3D scenes, written by Claude to estimated timing while the voice is made; they time themselves to each
@@ -155,8 +161,12 @@ elif kind == "draw" and LESSON:
     est = [len(s["ta"]) / 11 + sum(z for _, z in sentences(s["ta"])) for s in film["shots"]]
     a, b, dur = lesson_times(est)
     project.mkdir(parents=True, exist_ok=True)
-    (project / "lesson.json").write_text(json.dumps(p.lesson_json(film, a, b, dur), ensure_ascii=False, indent=1))
+    (project / "lesson.json").write_text(json.dumps({**p.lesson_json(film, a, b, dur), "draft": True}, ensure_ascii=False, indent=1))
     (project / "env.json").write_text(json.dumps({"fps": 30, "open": [], "beats": []}))
+    (project / "assets").mkdir(exist_ok=True)  # the 3D models made for this lesson (models job), by name
+    have = sorted(m.name[6:-4] for m in (project / "assets").glob("model-*.glb"))
+    (project / "assets" / "models.json").write_text(json.dumps(have))
+    print("3D models:", have or "none", "| wanted:", [o["slug"] for o in film.get("objects", [])], flush=True)
     t = time.monotonic()
     usage = p.author_lesson(film, project, lambda s: print("step:", s, flush=True))
     (project / "usage.json").write_text(json.dumps(usage or {}))
@@ -194,6 +204,9 @@ elif kind == "prepare":
         (project / "assets").mkdir(parents=True, exist_ok=True)
         p.mix_audio(film, plan_t, work, project / "assets" / "voice.mp3")
         p.lesson_kit(project)
+        for i, sh in enumerate(film["shots"]):  # each scene's AI picture, where the stage finds it
+            if sh.get("kind") == "photo" and (work / f"shot-{i}.jpg").exists():
+                shutil.copy(work / f"shot-{i}.jpg", project / "assets" / f"pic-{sh['scene']}.jpg")
         (project / "lesson.json").write_text(json.dumps(p.lesson_json(film, a, b, dur), ensure_ascii=False, indent=1))
         (project / "env.json").write_text(json.dumps(envelope(str(work / "voice.wav"))))
         (project / "timing.json").write_text(json.dumps(plan_t))  # the captions' clock (brain.py done)
@@ -246,11 +259,12 @@ elif kind == "join":
            "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-t", f"{duration():.3f}",
            "-movflags", "+faststart", str(job / "video.mp4")], "join")
     mbps = (job / "video.mp4").stat().st_size * 8 / 1e6 / max(1.0, duration())
-    if mbps > 7:  # n8n holds the whole file in memory on its way to YouTube: a 280 MB video crashed it
+    cap = 8 if LESSON else 6  # Mbps. n8n holds the whole file in memory on its way to YouTube: a 280 MB video crashed it
+    if mbps > cap + 1:
         big = job / "video-big.mp4"
         (job / "video.mp4").replace(big)
-        p.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(big), "-c:v", "libx264", "-preset", "medium", "-crf", "23", "-maxrate", "6M",
-               "-bufsize", "12M", "-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart", str(job / "video.mp4")], "shrink")
+        p.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(big), "-c:v", "libx264", "-preset", "medium", "-crf", "20" if LESSON else "23",
+               "-maxrate", f"{cap}M", "-bufsize", f"{2 * cap}M", "-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart", str(job / "video.mp4")], "shrink")
         big.unlink()
         print(f"shrunk from {mbps:.1f} Mbps", flush=True)
     got, want = p.probe(job / "video.mp4"), duration()

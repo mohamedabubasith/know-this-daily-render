@@ -1,5 +1,5 @@
 <!doctype html><html><head><meta charset="utf-8">
-<link href="https://fonts.googleapis.com/css2?family=Catamaran:wght@600;800;900&family=Inter:wght@500;600;700&family=Fraunces:opsz,wght@9..144,700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Catamaran:wght@600;700;800;900&family=Noto+Sans+Tamil:wght@600;800&family=Inter:wght@500;600;700&family=Fraunces:opsz,wght@9..144,700&display=swap" rel="stylesheet">
 <style>
 html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#0b1420;font-family:Inter,sans-serif}
 canvas{position:absolute;left:0;top:0;width:1920px;height:1080px}
@@ -15,6 +15,7 @@ canvas{position:absolute;left:0;top:0;width:1920px;height:1080px}
 #cap .ta span{display:inline-block;margin-right:.28em;will-change:transform,filter,opacity}
 #cap .en{margin-top:10px;font:500 24px/1.3 Inter;color:rgba(244,237,226,.62);letter-spacing:.2px}
 #num{font:700 17px Inter;letter-spacing:3px;color:#4FD1C5;margin-bottom:12px}
+body.light{background:#EEEAE4}body.light #shade{right:auto;width:1260px;background:linear-gradient(transparent,rgba(250,248,244,.9) 55%)}body.light #brand{color:#1c1f26}body.light #brand b{color:#1F9A93}body.light #part{background:rgba(28,31,38,.06);border-color:rgba(28,31,38,.14);color:#1c1f26}body.light #part i{color:#C4861A}body.light #bar{background:rgba(28,31,38,.1)}body.light #cap .ta{color:#1c1f26;text-shadow:none}body.light #cap .en{color:rgba(28,31,38,.6)}body.light #num{color:#1F9A93}
 </style>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/","@pixiv/three-vrm":"https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3/lib/three-vrm.module.min.js"}}</script>
 </head><body>
@@ -49,7 +50,7 @@ const SCN = LINES.map(l => l.scene | 0), NS = Math.max(...SCN) + 1;
 const SS = Array.from({ length: NS }, (_, j) => START[SCN.indexOf(j)]);  // scene starts
 const sceneEnd = j => j + 1 < NS ? SS[j + 1] : END;
 const AT = Array.from({ length: NS }, (_, j) => LINES.map((l, i) => [l, i]).filter(([l]) => (l.scene | 0) === j).map(([l]) => l.start - SS[j]));
-const WARM = parseInt(Q.get("warm") || "90", 10);
+const WARM = parseInt(Q.get("warm") || "45", 10);  // 1.5 s settles the hair
 document.querySelector("#part").innerHTML = (LESSON.label || "Know This Daily").replace(/[<>&]/g, " ").replace(/(\d+)$/, "<i>$1</i>");
 
 // ---------- easing ----------
@@ -64,34 +65,76 @@ let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 21474836
 const W = 1920, H = 1080, SMALL = new URLSearchParams(location.search).get("small") === "1";
 if (SMALL) { document.documentElement.style.zoom = 0.5; }
 const R = new THREE.WebGLRenderer({ canvas: document.getElementById("gl"), antialias: true, preserveDrawingBuffer: true });
-R.setPixelRatio(SMALL ? 0.5 : 1); R.setSize(W, H); R.outputColorSpace = THREE.SRGBColorSpace;
+const PR = SMALL ? 0.5 : (window.devicePixelRatio || 1);
+R.setPixelRatio(PR); R.setSize(W, H); R.outputColorSpace = THREE.SRGBColorSpace;
 R.shadowMap.enabled = true; R.shadowMap.type = THREE.PCFSoftShadowMap;
 R.toneMapping = THREE.ACESFilmicToneMapping; R.toneMappingExposure = 0.95;
-const set = new THREE.Scene(); const BG = 0x0b1420;
-set.background = new THREE.Color(BG); set.fog = new THREE.Fog(BG, 14, 34);
-set.environment = new THREE.PMREMGenerator(R).fromScene(new RoomEnvironment(), 0.04).texture; set.environmentIntensity = 0.55;
+// three looks for the set: "light" (bright studio), "deep" (charcoal studio, spotlights), "class" (modern classroom)
+const THEME = Q.get("bg") || LESSON.bg || "light";  // the owner chose the light studio (2026-11-19)
+document.body.classList.add(THEME);
+const set = new THREE.Scene();
+const BG = { light: 0xEEEAE4, deep: 0x121417, class: 0x2a2620 }[THEME] ?? 0x121417;
+set.background = new THREE.Color(BG); set.fog = new THREE.Fog(BG, THEME === "light" ? 20 : 16, THEME === "light" ? 48 : 38);
+set.environment = new THREE.PMREMGenerator(R).fromScene(new RoomEnvironment(), 0.04).texture; set.environmentIntensity = THEME === "light" ? 0.8 : 0.55;
+if (THEME === "light") R.toneMappingExposure = 1.0;
 const cam = new THREE.PerspectiveCamera(32, W / H, 0.1, 80);
-set.add(new THREE.HemisphereLight(0xcfe8ff, 0x1a1208, 0.5));
-const key = new THREE.DirectionalLight(0xfff1dc, 2.0); key.castShadow = true;
-key.shadow.mapSize.set(2048, 2048); Object.assign(key.shadow.camera, { left: -8, right: 8, top: 8, bottom: -8, near: 1, far: 30 }); key.shadow.radius = 6; key.shadow.bias = -0.0004;
+set.add(new THREE.HemisphereLight(0xfff8f0, THEME === "light" ? 0xb8ab98 : 0x1a1208, THEME === "light" ? 1.3 : 0.55));
+const key = new THREE.DirectionalLight(THEME === "class" ? 0xffe6c4 : 0xfff1dc, THEME === "light" ? 2.2 : 2.0); key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048); Object.assign(key.shadow.camera, { left: -8, right: 8, top: 8, bottom: -8, near: 1, far: 30 }); key.shadow.radius = 8; key.shadow.bias = -0.0004;
 set.add(key, key.target);
-const rim = new THREE.DirectionalLight(0x5fe0d4, 1.6); set.add(rim, rim.target);
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(400, 60), new THREE.MeshStandardMaterial({ color: 0x0e1a26, roughness: 0.38, metalness: 0.35 }));
-floor.rotation.x = -Math.PI / 2; floor.position.set(60, -2.2, 0); floor.receiveShadow = true; set.add(floor);
-
+const rim = new THREE.DirectionalLight(THEME === "deep" ? 0x9fc7ff : 0xffffff, THEME === "light" ? 0.6 : 1.1); set.add(rim, rim.target);
+const canvasTex = (w, h, draw) => { const c = document.createElement("canvas"); c.width = w; c.height = h; draw(c.getContext("2d"), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t; };
+const SPAN = NS * 14 + 40;  // the set runs along x; one scene every 14 units
+const floorMat = {
+  light: new THREE.MeshStandardMaterial({ color: 0xE6E0D7, roughness: 0.9 }),
+  deep: new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 0.22, metalness: 0.55 }),
+  class: (() => { const t = canvasTex(1024, 1024, (x, w, h) => { for (let i = 0; i < 16; i++) { const v = 0.82 + 0.18 * ((i * 37) % 7) / 7; x.fillStyle = `rgb(${Math.round(150 * v)},${Math.round(104 * v)},${Math.round(68 * v)})`; x.fillRect(0, i * 64, w, 62); x.fillStyle = "rgba(60,36,18,.55)"; x.fillRect(((i * 389) % 900), i * 64, 3, 62); } });
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(SPAN / 8, 6); return new THREE.MeshStandardMaterial({ map: t, roughness: 0.55 }); })(),
+}[THEME] || null;
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(SPAN + 60, 60), floorMat || new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 0.3 }));
+floor.rotation.x = -Math.PI / 2; floor.position.set(SPAN / 2 - 20, -2.2, 0); floor.receiveShadow = true; set.add(floor);
+// back wall: a seamless studio sweep, or a classroom wall
+const wallTex = THEME === "light"
+  ? canvasTex(16, 512, (x, w, h) => { const g = x.createLinearGradient(0, 0, 0, h); g.addColorStop(0, "#F6F3EE"); g.addColorStop(1, "#E3DDD4"); x.fillStyle = g; x.fillRect(0, 0, w, h); })
+  : THEME === "class"
+  ? canvasTex(16, 512, (x, w, h) => { const g = x.createLinearGradient(0, 0, 0, h); g.addColorStop(0, "#E9DFCC"); g.addColorStop(0.8, "#D9CCB4"); g.addColorStop(0.81, "#7d5a3c"); g.addColorStop(1, "#6b4b31"); x.fillStyle = g; x.fillRect(0, 0, w, h); })
+  : canvasTex(16, 512, (x, w, h) => { const g = x.createLinearGradient(0, 0, 0, h); g.addColorStop(0, "#0d0f12"); g.addColorStop(1, "#1b1e23"); x.fillStyle = g; x.fillRect(0, 0, w, h); });
+const wall = new THREE.Mesh(new THREE.PlaneGeometry(SPAN + 60, 16), new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.95 }));
+wall.position.set(SPAN / 2 - 20, 5.8, -6); wall.receiveShadow = true; set.add(wall);
+{ // the curve where wall meets floor (no hard line)
+  const cove = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, SPAN + 60, 32, 1, true, Math.PI, Math.PI / 2), THEME === "class" ? new THREE.MeshStandardMaterial({ color: 0x6b4b31, roughness: 0.7 }) : floor.material.clone());
+  if (THEME !== "class") cove.material.map = null;
+  cove.material.side = THREE.BackSide; cove.rotation.z = Math.PI / 2; cove.position.set(SPAN / 2 - 20, 0, -3.8); cove.receiveShadow = true; set.add(cove);
+}
+for (let i = 0; i < NS; i++) {
+  if (THEME === "deep") { // a soft spotlight pool on the back wall behind each scene
+    const sp = new THREE.Mesh(new THREE.PlaneGeometry(13, 9), new THREE.MeshBasicMaterial({ map: canvasTex(256, 256, (x, w, h) => { const g = x.createRadialGradient(w / 2, h * 0.55, 0, w / 2, h * 0.55, w / 2); g.addColorStop(0, "rgba(255,236,210,.30)"); g.addColorStop(0.5, "rgba(255,236,210,.10)"); g.addColorStop(1, "rgba(255,236,210,0)"); x.fillStyle = g; x.fillRect(0, 0, w, h); }), transparent: true, depthWrite: false, fog: false }));
+    sp.position.set(i * 14 + 0.5, 2.2, -5.95); set.add(sp);
+  }
+  if (THEME === "class") { // a green board with a wooden frame behind each scene, and a window's light
+    const board = new THREE.Group(); board.position.set(i * 14 + 0.4, 2.0, -5.9); set.add(board);
+    const fr = new THREE.Mesh(new RoundedBoxGeometry(10.6, 5.3, 0.16, 3, 0.06), new THREE.MeshStandardMaterial({ color: 0x8a6240, roughness: 0.6 })); board.add(fr);
+    const gb = new THREE.Mesh(new THREE.PlaneGeometry(10.1, 4.8), new THREE.MeshStandardMaterial({ roughness: 0.95, map: canvasTex(512, 256, (x, w, h) => { x.fillStyle = "#24453c"; x.fillRect(0, 0, w, h); for (let k = 0; k < 900; k++) { x.fillStyle = `rgba(255,255,255,${0.015 + 0.02 * ((k * 13) % 5) / 5})`; x.fillRect((k * 97) % w, (k * 53) % h, 3, 1); } }) }));
+    gb.position.z = 0.085; board.add(gb);
+    const tray = new THREE.Mesh(new THREE.BoxGeometry(10.6, 0.12, 0.35), fr.material); tray.position.set(0, -2.7, 0.2); board.add(tray);
+    const sun = new THREE.Mesh(new THREE.PlaneGeometry(5, 9), new THREE.MeshBasicMaterial({ map: canvasTex(128, 128, (x, w, h) => { const g = x.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2); g.addColorStop(0, "#fff"); g.addColorStop(1, "rgba(255,255,255,0)"); x.fillStyle = g; x.fillRect(0, 0, w, h); }), color: 0xffe2b0, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false })); sun.position.set(i * 14 - 6.5, 3, -5.8); sun.rotation.z = 0.35; set.add(sun);
+  }
+}
 const TEAL = 0x1F9A93, SAF = 0xF2B544, CORAL = 0xE8604C, LAV = 0x8A7BEA, CREAM = 0xF6EFE4, INK = 0x1c1f26, GOLD = 0xE9C46A, GREEN = 0x3DBE7A;
 const gloss = (c, o = {}) => new THREE.MeshPhysicalMaterial({ color: c, roughness: 0.3, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.12, ...o });
 const metal = (c, r = 0.28) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: 1 });
 const rbox = (w, h, d, r, m) => { const x = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 5, r), m); x.castShadow = x.receiveShadow = true; return x; };
 const font = await new Promise(ok => new FontLoader().load("https://cdn.jsdelivr.net/npm/three@0.180.0/examples/fonts/helvetiker_bold.typeface.json", ok));
-const t3 = (s, size, c, depth = 0.16) => { const g = new TextGeometry(s, { font, size, depth, curveSegments: 8, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.018, bevelSegments: 4 }); g.center(); const m = new THREE.Mesh(g, gloss(c)); m.castShadow = true; return m; };
-await document.fonts.load("800 80px Catamaran"); await document.fonts.load("700 80px Inter");
+const t3 = (s, size, c, depth = 0.16) => {
+  if (/[^\x20-\x7E]/.test(s)) return label(s, { w: size * Math.max(1, s.length) * 0.75, h: size * 1.4, color: "#" + new THREE.Color(c).getHexString() }); const g = new TextGeometry(s, { font, size, depth, curveSegments: 8, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.018, bevelSegments: 4 }); g.center(); const m = new THREE.Mesh(g, gloss(c)); m.castShadow = true; return m; };
+await Promise.all(["600", "700", "800", "900"].flatMap(w => [document.fonts.load(`${w} 80px Catamaran`, "தமிழ் அஆ Abc"), document.fonts.load(`${w} 80px "Noto Sans Tamil"`, "தமிழ்")]).concat(["500", "600", "700"].map(w => document.fonts.load(`${w} 80px Inter`, "Abc ₹"))));
 function label(text, { w = 2, h = 0.6, color = "#fff", bg = null, weight = 800, fam = "Catamaran", fill = 0.82 } = {}) {
   const s = 256, c = document.createElement("canvas"); c.width = Math.round(w * s); c.height = Math.round(h * s);
   const x = c.getContext("2d");
   if (bg) { x.fillStyle = bg; x.beginPath(); x.roundRect(0, 0, c.width, c.height, c.height / 2); x.fill(); }
-  let px = c.height * 0.62; x.font = `${weight} ${px}px ${fam}`;
-  while (x.measureText(text).width > c.width * fill) { px -= 2; x.font = `${weight} ${px}px ${fam}`; }
+  const FAM = `${fam}, Catamaran, "Noto Sans Tamil", sans-serif`;
+  let px = c.height * 0.62; x.font = `${weight} ${px}px ${FAM}`;
+  while (x.measureText(text).width > c.width * fill) { px -= 2; x.font = `${weight} ${px}px ${FAM}`; }
   x.fillStyle = color; x.textAlign = "center"; x.textBaseline = "middle"; x.fillText(text, c.width / 2, c.height / 2 + px * 0.06);
   const tx = new THREE.CanvasTexture(c); tx.colorSpace = THREE.SRGBColorSpace; tx.anisotropy = 8;
   return new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tx, transparent: true, toneMapped: false }));
@@ -106,16 +149,13 @@ function docTex(stripe) {
 const soft = (() => { const c = document.createElement("canvas"); c.width = c.height = 128; const x = c.getContext("2d"); const g = x.createRadialGradient(64, 64, 0, 64, 64, 64); g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(0.35, "rgba(255,255,255,.55)"); g.addColorStop(1, "rgba(255,255,255,0)"); x.fillStyle = g; x.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); })();
 const pop = (o, lt, at, dur = 0.55) => { const s = (o.userData.s ??= o.scale.x); const e = back((lt - at) / dur); o.scale.setScalar(Math.max(1e-4, s * e)); o.visible = lt > at; return e; };
 
-// backdrop glow + floating bokeh dust across the whole set
-for (let i = 0; i < NS; i++) {
-  const g = new THREE.Sprite(new THREE.SpriteMaterial({ map: soft, color: [TEAL, SAF, LAV, CORAL][i % 4], transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
-  g.scale.set(16, 11, 1); g.position.set(i * 14 - 1, 2.5, -10); set.add(g);
-}
-{ const n = 900, p = new Float32Array(n * 3), col = new Float32Array(n * 3), cs = [new THREE.Color(0x7fe9df), new THREE.Color(0xffd27a), new THREE.Color(0xffffff)];
-  for (let i = 0; i < n; i++) { p.set([rnd() * (NS * 14 + 10) - 8, rnd() * 9 - 2, -rnd() * 16 + 3], i * 3); const c = cs[i % 3]; col.set([c.r, c.g, c.b], i * 3); }
-  const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(p, 3)); g.setAttribute("color", new THREE.BufferAttribute(col, 3));
-  var dust = new THREE.Points(g, new THREE.PointsMaterial({ size: 0.09, map: soft, vertexColors: true, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
-  set.add(dust); }
+// a few faint motes of dust in the light (the dark looks only)
+var dust = new THREE.Group();
+if (THEME !== "light") { const n = 260, p = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) p.set([rnd() * (NS * 14 + 10) - 8, rnd() * 7 - 1.5, -rnd() * 9 + 1], i * 3);
+  const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(p, 3));
+  dust = new THREE.Points(g, new THREE.PointsMaterial({ size: 0.05, map: soft, color: 0xfff1dc, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false })); }
+set.add(dust);
 
 // ---------- stations: one prop cluster per line, written per lesson in stations.js ----------
 function chip(scale = 1) {
@@ -127,10 +167,52 @@ function chip(scale = 1) {
   const ai = t3("AI", 0.62, CREAM, 0.12); ai.position.z = 0.3; c.add(ai);
   c.scale.setScalar(scale); return c;
 }
+// the scene's AI picture (9:16), or a grey stand-in while it is still being made (the writer's checks)
+const PICS = await Promise.all(Array.from({ length: NS }, async (_, j) => {
+  try { const t = await new THREE.TextureLoader().loadAsync(`./assets/pic-${j}.jpg`); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t; }
+  catch (e) {  // still being made (the writer's checks: a grey "picture" card), or none came (a calm brand gradient)
+    const c = document.createElement("canvas"); c.width = 576; c.height = 1024; const x = c.getContext("2d");
+    if (LESSON.draft) { x.fillStyle = "#8b8f99"; x.fillRect(0, 0, 576, 1024); x.fillStyle = "#c9ccd3"; x.font = "700 64px Inter"; x.textAlign = "center"; x.fillText("picture", 288, 530); }
+    else { const gr = x.createLinearGradient(0, 0, 576, 1024); gr.addColorStop(0, "#1F9A93"); gr.addColorStop(1, "#F2B544"); x.fillStyle = gr; x.fillRect(0, 0, 576, 1024); }
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; }
+}));
+const picMat = (tex, aspect) => {  // aspect = width / height of the shape it goes on: the picture is centre-cropped to fit
+  const t = tex.clone(); t.needsUpdate = true; const src = 9 / 16;
+  if (aspect > src) { const r = src / aspect; t.repeat.set(1, r); t.offset.set(0, (1 - r) / 2); } else { const r = aspect / src; t.repeat.set(r, 1); t.offset.set((1 - r) / 2, 0); }
+  return new THREE.MeshBasicMaterial({ map: t, toneMapped: false });
+};
+function frame(tex, h = 2.6, aspect = 3 / 4, color = 0x6b4a2f) {  // a framed photo standing up
+  const w = h * aspect, f = new THREE.Group();
+  f.add(rbox(w + 0.22, h + 0.22, 0.12, 0.05, gloss(color, { roughness: 0.45 })));
+  const p = new THREE.Mesh(new THREE.PlaneGeometry(w, h), picMat(tex, aspect)); p.position.z = 0.065; f.add(p); return f;
+}
+function phone(tex, h = 2.8) {  // a phone showing the picture
+  const w = h * 0.5, f = new THREE.Group();
+  f.add(rbox(w + 0.14, h + 0.14, 0.14, 0.2, gloss(0x15171c, { roughness: 0.2 })));
+  const p = new THREE.Mesh(new THREE.PlaneGeometry(w, h - 0.1), picMat(tex, w / (h - 0.1))); p.position.z = 0.075; f.add(p); return f;
+}
+function card(tex, size = 2, radius = 0.18) {  // a square glossy card with the picture
+  const f = new THREE.Group(); f.add(rbox(size + 0.12, size + 0.12, 0.08, radius, gloss(0xf3efe8)));
+  const p = new THREE.Mesh(new THREE.PlaneGeometry(size, size), picMat(tex, 1)); p.position.z = 0.045; f.add(p); return f;
+}
+// real 3D models (TRELLIS or a free model library): assets/models.json lists names, assets/model-NAME.glb holds each
+const MODELS = {};
+try {
+  const names = await (await fetch("./assets/models.json")).json(), gl = new GLTFLoader();
+  await Promise.all(names.map(async n => { try { MODELS[n] = (await gl.loadAsync(`./assets/model-${n}.glb`)).scene; } catch (e) { console.error("model " + n + ": " + e.message); } }));
+} catch (e) { /* no models in this lesson */ }
+function model(name, h = 1) {  // a copy of the model standing on y = 0, centred, h units tall; a grey stand-in if missing
+  const g = new THREE.Group(), src = MODELS[name];
+  if (!src) { if (LESSON.draft) { const b = rbox(h * 0.4, h, h * 0.4, h * 0.05, gloss(0x9aa0a8)); b.position.y = h / 2; g.add(b); } return g; }  // never a stand-in in the video
+  const m = src.clone(true), b = new THREE.Box3().setFromObject(m), k = h / Math.max(1e-6, b.max.y - b.min.y);
+  m.scale.setScalar(k); m.position.set(-(b.min.x + b.max.x) / 2 * k, -b.min.y * k, -(b.min.z + b.max.z) / 2 * k);
+  m.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; } });
+  g.add(m); return g;
+}
 const SHAKE = [];  // per line: local times of a camera shake
-const K = { THREE, gloss, metal, rbox, t3, label, docTex, soft, pop, back, out3, io3, sstep, cl, rnd, chip,
+const K = { THREE, gloss, metal, rbox, t3, label, docTex, soft, pop, back, out3, io3, sstep, cl, rnd, chip, frame, phone, card, picMat, model,
   TEAL, SAF, CORAL, LAV, CREAM, INK, GOLD, GREEN, font };
-const ST = [], ERR = [];
+const ST = [], ERR = [], FITS = [];
 let BUILD = [];
 try { BUILD = (await import("./stations.js?v=" + Date.now())).default || []; } catch (e) { ERR.push("stations.js: " + e.message); }
 for (let i = 0; i < NS; i++) {
@@ -138,31 +220,48 @@ for (let i = 0; i < NS; i++) {
   let up = () => {};
   try {
     const f = BUILD[i]; if (typeof f !== "function") throw new Error("no station for this scene");
-    const r = f(g, { ...K, shake: at => SHAKE[i].push(at), at: k => AT[i][Math.min(k, AT[i].length - 1)] ?? 0, lines: AT[i].length, dur: sceneEnd(i) - SS[i] }); if (typeof r === "function") up = r;
-    up(0); up(2);
+    const fit = new THREE.Group(); g.add(fit);
+    const r = f(fit, { ...K, pic: PICS[i], shake: at => SHAKE[i].push(at), at: k => AT[i][Math.min(k, AT[i].length - 1)] ?? 0, lines: AT[i].length, dur: sceneEnd(i) - SS[i] }); if (typeof r === "function") up = r;
+    // the props' extent once everything has appeared, at a few moments; scaled and moved into the safe box if needed
+    const box = new THREE.Box3(), dur = sceneEnd(i) - SS[i];
+    for (const lt of [...AT[i].map(a => a + 1.6), dur - 0.3]) { up(Math.min(lt, dur - 0.05)); fit.updateMatrixWorld(true);
+      fit.traverse(o => { let on = o.visible; for (let q = o.parent; q && on; q = q.parent) on = q.visible;
+        if (o.isMesh && !o.isInstancedMesh && on && [].concat(o.material).every(m => m.blending !== THREE.AdditiveBlending) && o.getWorldScale(new THREE.Vector3()).x > 0.05) { const b = new THREE.Box3().setFromObject(o); if (isFinite(b.min.x)) box.union(b); } }); }
+    box.translate(g.position.clone().negate());  // into the scene's own space
+    if (!box.isEmpty()) {
+      const SAFE = { x0: -2.9, x1: 3.2, y0: -1.2, y1: 1.85 }, sz = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+      const k = Math.min(1, (SAFE.x1 - SAFE.x0) / sz.x, (SAFE.y1 - SAFE.y0) / sz.y);
+      if (k < 1 || box.min.x < SAFE.x0 || box.max.x > SAFE.x1 || box.min.y < SAFE.y0 || box.max.y > SAFE.y1) {
+        fit.scale.setScalar(k);
+        const cx = cl(c.x * k, SAFE.x0 + sz.x * k / 2, SAFE.x1 - sz.x * k / 2), cy = cl(c.y * k, SAFE.y0 + sz.y * k / 2, SAFE.y1 - sz.y * k / 2);
+        fit.position.set(cx - c.x * k, cy - c.y * k, 0);
+        FITS.push(`scene ${i + 1}: props ${sz.x.toFixed(1)} x ${sz.y.toFixed(1)} at (${c.x.toFixed(1)}, ${c.y.toFixed(1)}) were moved${k < 1 ? ` and scaled to ${Math.round(k * 100)}%` : ""} to stay in the safe box`);
+      }
+    }
+    up(0);
   } catch (e) { ERR.push(`scene ${i + 1}: ${e.message}`); g.clear(); up = () => {}; }
   ST[i] = { g, up: lt => { try { up(lt); } catch (e) { if (ERR.length < 50) ERR.push(`scene ${i + 1} at ${lt.toFixed(2)}s: ${e.message}`); } } };
 }
-window.__errors = ERR;
+window.__errors = ERR; window.__fits = FITS;
 for (const e of ERR) console.error("STATION " + e);
 
 // ---------- post: DOF, bloom, whip blur, grade ----------
-const comp = new EffectComposer(R); comp.setPixelRatio(SMALL ? 0.5 : 1);
+const comp = new EffectComposer(R, new THREE.WebGLRenderTarget(W * PR, H * PR, { samples: SMALL ? 0 : 4, type: THREE.HalfFloatType })); comp.setPixelRatio(PR);
 comp.addPass(new RenderPass(set, cam));
-const bokeh = new BokehPass(set, cam, { focus: 9.5, aperture: 0.0016, maxblur: 0.009 }); comp.addPass(bokeh);
-comp.addPass(new UnrealBloomPass(new THREE.Vector2(W, H), 0.45, 0.5, 0.97));
+const bokeh = new BokehPass(set, cam, { focus: 9.5, aperture: 0.0007, maxblur: 0.005 }); comp.addPass(bokeh);
+comp.addPass(new UnrealBloomPass(new THREE.Vector2(W, H), THEME === "light" ? 0.12 : 0.45, 0.5, THEME === "light" ? 1.4 : 0.97));  // a bright set must not glow all over
 comp.addPass(new OutputPass());
 const grade = new ShaderPass({
   uniforms: { tDiffuse: { value: null }, blur: { value: 0 }, time: { value: 0 } },
   vertexShader: "varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }",
-  fragmentShader: `uniform sampler2D tDiffuse; uniform float blur, time; varying vec2 vUv;
+  fragmentShader: `#define VIG ${THEME === "light" ? ".9" : ".7"}
+  #define GRAIN ${THEME === "light" ? ".012" : ".02"}
+  uniform sampler2D tDiffuse; uniform float blur, time; varying vec2 vUv;
   float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233)) + time) * 43758.5453); }
   void main(){
     vec3 c = vec3(0.); for (int i = 0; i < 13; i++) { float o = (float(i) / 12. - .5) * blur; c += texture2D(tDiffuse, vUv + vec2(o, 0.)).rgb; } c /= 13.;
-    float ca = .0012 * length(vUv - .5); c.r = mix(c.r, texture2D(tDiffuse, vUv + vec2(ca, 0.)).r, .5); c.b = mix(c.b, texture2D(tDiffuse, vUv - vec2(ca, 0.)).b, .5);
-    vec2 d = vUv - vec2(.74, .58); c += vec3(.10, .42, .40) * .22 * exp(-dot(d * vec2(1.7, 1.), d * vec2(1.7, 1.)) * 7.);
-    float v = smoothstep(1.05, .35, length((vUv - .5) * vec2(1.25, 1.))); c *= mix(.62, 1., v);
-    c += (h(vUv * 1000.) - .5) * .035;
+    float v = smoothstep(1.05, .35, length((vUv - .5) * vec2(1.25, 1.))); c *= mix(VIG, 1., v);
+    c += (h(vUv * 1000.) - .5) * GRAIN;
     gl_FragColor = vec4(c, 1.);
   }` });
 comp.addPass(grade);
@@ -194,7 +293,7 @@ vrm.scene.traverse(o => { if (!o.material) return; for (const m of [].concat(o.m
   if (m.name.startsWith("Tops_01")) { m.map = kt; if ("shadeMultiplyTexture" in m) m.shadeMultiplyTexture = kt; if (m.shadeColorFactor) m.shadeColorFactor.set(0x9aa0c8); }
   if (m.name.startsWith("Bottoms_01") && m.color) m.color.set(0x3a2a30);
   if (m.name.startsWith("Body_00_SKIN")) { m.color.set(0xffe9dc); m.shadeColorFactor.set(0xe0a48c); }
-  if (m.parametricRimColorFactor) { m.parametricRimColorFactor.set(0x3fb8ae); m.parametricRimFresnelPowerFactor = 3.2; m.parametricRimLiftFactor = 0.05; }
+  if (m.parametricRimColorFactor) m.parametricRimColorFactor.set(0x000000);  // no coloured rim: the owner saw it as a green-blue edge
   m.needsUpdate = true; } });
 // gown: pleated flared skirt from the waist, gold hem; follows the hips
 { const prof = []; for (let i = 0; i <= 12; i++) { const v = i / 12; prof.push(new THREE.Vector2(0.15 + 0.3 * Math.pow(v, 1.4), -v * 0.85)); }
@@ -295,7 +394,7 @@ function captions(t) {
   if (i !== capLine) { capLine = i; ta.innerHTML = WT[i].map(x => `<span>${x.w}</span>`).join(""); en.textContent = SUB[i]; num.textContent = String(i + 1).padStart(2, "0") + " / " + N; }
   const sp = ta.children, out = cl((lineEnd(i) - 0.1 - t) / 0.18);
   WT[i].forEach((x, k) => { const e = out3((t - x.t + 0.12) / 0.32), s = sp[k]; const now = t >= x.t - 0.05 && (k + 1 >= WT[i].length || t < WT[i][k + 1].t - 0.05);
-    s.style.opacity = e * out; s.style.transform = `translateY(${(1 - e) * 26}px)`; s.style.filter = `blur(${(1 - e) * 10}px)`; s.style.color = now ? "#F2B544" : "#fff"; });
+    s.style.opacity = e * out; s.style.transform = `translateY(${(1 - e) * 26}px)`; s.style.filter = `blur(${(1 - e) * 10}px)`; s.style.color = now ? (THEME === "light" ? "#C4861A" : "#F2B544") : (THEME === "light" ? "#1c1f26" : "#fff"); });
   en.style.opacity = 0.9 * out3((t - START[i]) / 0.5) * out; num.style.opacity = out3((t - START[i]) / 0.4) * out;
   bar.style.width = (100 * t / END).toFixed(2) + "%";
 }

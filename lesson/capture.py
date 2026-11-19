@@ -32,7 +32,7 @@ ARGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--disable-gpu
 
 
 def open_page(b, t0: float):
-    pg = b.new_page(viewport={"width": 1920, "height": 1080})
+    pg = b.new_page(viewport={"width": 1920, "height": 1080}, device_scale_factor=4 / 3)  # 2560x1440: YouTube streams 1440p uploads sharper
     errs = []
     pg.on("pageerror", lambda e: errs.append(f"page error: {e}"))
     pg.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
@@ -59,10 +59,10 @@ with sync_playwright() as p:
         a, z, out = int(sys.argv[3]), int(sys.argv[4]), sys.argv[5]
         pg, errs = open_page(b, a / FPS)
         enc = subprocess.Popen(["ffmpeg", "-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", str(FPS), "-c:v", "mjpeg", "-i", "-",
-                                "-c:v", "libx264", "-preset", "medium", "-crf", "21", "-pix_fmt", "yuv420p", "-r", str(FPS), out], stdin=subprocess.PIPE)
+                                "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-r", str(FPS), out], stdin=subprocess.PIPE)
         for i in range(a, z):
             pg.evaluate(f"renderAt({i / FPS})")
-            enc.stdin.write(pg.screenshot(type="jpeg", quality=92))
+            enc.stdin.write(pg.screenshot(type="jpeg", quality=97))
             if (i - a) % 150 == 0:
                 print(f"frame {i} ({i - a + 1}/{z - a})", flush=True)
         enc.stdin.close()

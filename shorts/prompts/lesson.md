@@ -41,10 +41,17 @@ Scene (field `scene`): the scene number of the line, 0 for the first scene, coun
 3 consecutive lines.
 
 Picture (field `picture`, on the first line of each scene; "" on the other lines): 2 to 4 English sentences for the
-3D motion designer: the real objects to model for this scene (a copper pot with steam, a phone with a chat, a
-balance scale, a stack of books, a planet), how they are arranged, and what changes or appears on each line of the
-scene. Concrete and physical, never "an icon", "a card with text", "a diagram with boxes". At most 1 to 3 short
-Tamil words on labels in a scene.
+3D motion designer: how the scene's objects are arranged and how they move, and what changes or appears on each
+line of the scene (the broom sweeps the dust off the kolam; the mango spins and splits into pixels). Concrete and
+physical, never "an icon", "a card with text", "a diagram with boxes". At most 1 to 3 short Tamil words on labels.
+
+Objects (field `objects`, on the first line of a scene; [] on the other lines): the real things the scene shows,
+1 to 3 per scene. Each is made as a real, accurate 3D model and animated (a broom sweeping, a mango spinning, a
+phone lighting up), so the scene must not need anything else that looks real. `name`: 1 to 3 plain English words
+for one physical thing ("coconut leaf broom", "mango", "smartphone", "old television", "wooden easel", "school
+bag"). `look`: one exact English sentence of how it looks (shape, colour, material, parts), Tamil Nadu style where it
+fits (a steel tumbler, a clay pot, a coconut leaf broom). Only single objects: no scenes, no crowds, no text, no
+famous people, no body parts alone except a hand. Reuse the same name for the same thing in every scene.
 
 Acting (field `act`, per line): the host's gestures while she says the line, 2 moves at most: each move has `at`
 (when, as a fraction of the line, 0 to 0.9) and `pose`, and an optional `face`:

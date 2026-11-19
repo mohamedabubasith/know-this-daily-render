@@ -154,9 +154,12 @@ EXPLAINER_SCHEMA = {
 POSES = ["open", "wide", "present", "point", "one", "chest", "think", "shrug", "wave", "rest"]
 LESSON_SHOT = {
     "type": "object", "additionalProperties": False,
-    "required": ["ta", "en", "mood", "scene", "picture", "act"],
+    "required": ["ta", "en", "mood", "scene", "picture", "objects", "act"],
     "properties": {"ta": {"type": "string"}, "en": {"type": "string"}, "mood": {"enum": MOODS},
                    "scene": {"type": "integer", "minimum": 0, "maximum": 15}, "picture": {"type": "string"},
+                   "objects": {"type": "array", "maxItems": 3, "items": {  # real things, made as real 3D models
+                       "type": "object", "additionalProperties": False, "required": ["name", "look"],
+                       "properties": {"name": {"type": "string"}, "look": {"type": "string"}}}},
                    "act": {"type": "array", "maxItems": 2, "items": {
                        "type": "object", "additionalProperties": False, "required": ["at", "pose", "face"],
                        "properties": {"at": {"type": "number", "minimum": 0, "maximum": 0.9}, "pose": {"enum": POSES},
@@ -307,11 +310,24 @@ def _lesson_shots(film: dict) -> dict:
     film["subtitles"] = "ta"
     seen, last = {}, None
     for s in film["shots"]:
-        if s.get("scene") != last:
+        first = s.get("scene") != last
+        if first:
             last = s.get("scene")
             seen[len(seen)] = True
         s["scene"] = len(seen) - 1
-        s.update(kind="scene", image="", anim=NO_ANIM, framing="medium", move="push_in", overlay=NO_OVERLAY, transition="cut")
+        objs = []
+        for o in (s.get("objects") or []) if first else []:  # the scene's real things, each a real 3D model
+            slug = "-".join(re.findall(r"[a-z0-9]+", str(o.get("name", "")).lower()))[:40]
+            if slug and slug not in [x["slug"] for x in objs]:
+                objs.append({"slug": slug, "name": str(o["name"])[:60], "look": str(o.get("look", ""))[:400]})
+        s.update(kind="scene", image="", objects=objs, anim=NO_ANIM, framing="medium", move="push_in",
+                 overlay=NO_OVERLAY, transition="cut")
+    seen_slugs, film["objects"] = set(), []
+    for s in film["shots"]:
+        for o in s["objects"]:
+            if o["slug"] not in seen_slugs and len(film["objects"]) < 12:
+                seen_slugs.add(o["slug"])
+                film["objects"].append(o)
     return film
 
 
@@ -451,7 +467,7 @@ def clean_film(film: dict) -> dict:
     for s in film["shots"]:
         s["ta"] = speakable(s["ta"])
     for i, s in enumerate(film["shots"]):
-        if s.get("kind") == "scene":  # explainer: programmed scenes stay; only the subtitle highlight is tidied
+        if s.get("kind") == "scene" or film.get("format") == "lesson":  # programmed scenes stay; only the subtitle highlight is tidied
             s["en"] = re.sub(r"\*([^*]*\s[^*]*)\*", r"\1", s["en"])
             continue
         a = s.get("anim") or {}
@@ -1272,7 +1288,8 @@ def author_lesson(film: dict, stage: Path, log=print) -> dict | None:
     lesson.json there may hold estimated timing: the scenes time themselves to K.at(k), so real timing fits later."""
     lesson_kit(stage)
     (stage / "brief.json").write_text(json.dumps({**film.get("brief", {}), "title": film.get("en_title", ""), "scenes": [
-        {"scene": s["scene"], "picture": s.get("picture", ""), "lines": [x["en"] for x in film["shots"] if x["scene"] == s["scene"]]}
+        {"scene": s["scene"], "picture": s.get("picture", ""), "models": [o["slug"] for o in s.get("objects", [])],
+         "lines": [x["en"] for x in film["shots"] if x["scene"] == s["scene"]]}
         for s in film["shots"] if s.get("picture")]}, ensure_ascii=False, indent=1))
     change = (film.get("author_change") or "").strip()
     env = {**os.environ, "CLAUDE_CODE_OAUTH_TOKEN": claude_token(), "DISABLE_AUTOUPDATER": "1",
@@ -1324,8 +1341,18 @@ def author_lesson(film: dict, stage: Path, log=print) -> dict | None:
     else:
         log("drawing the scenes")
         usage = claude("Make the 3D scenes of this lesson. Read AUTHOR.md, example.js, brief.json and lesson.json, write "
-                       "stations.js with one entry per scene, check it, look at stills of a few scenes, fix, and finish with DONE.md.",
+                       "stations.js with one entry per scene, check it, look at stills of every scene, fix, and finish with DONE.md.",
                        "lesson-draw")
+        log("reviewing the scenes")
+        # A second, fresh look: the owner rejects any object that is not instantly recognisable and correct.
+        review = claude("You are the strict reviewer of these 3D scenes, not their author. Read AUTHOR.md (the section 'Accuracy: "
+                        "the owner's first rule' above all), brief.json and lesson.json. Run python3 check.py with one time per "
+                        "scene (a moment after its last reveal) and read every still. For each scene ask: would a child name every "
+                        "object correctly at first glance? Is anything made of primitives that should have been the picture? Do "
+                        "objects overlap, touch the edges, hide behind the host or the captions? Fix every failure in stations.js "
+                        "(replace with the picture or a clean graphic, or remove it), check again, and write REVIEW.md: one line "
+                        "per scene, what you changed or 'ok'.", "lesson-review")
+        usage = _add_usage(usage, review)
     for attempt in range(2):
         errors = _lesson_errors(stage)
         if not errors:
