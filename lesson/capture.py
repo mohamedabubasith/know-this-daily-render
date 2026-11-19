@@ -1,7 +1,7 @@
 """Frames of the lesson stage (stage.html, three.js) with Chrome on CPU.
 
   python capture.py DIR still T [T ...]   DIR/still-T.jpg for each time T, and any scene errors (for the writer's checks)
-  python capture.py DIR chunk A B OUT     frames A..B-1 (30 fps) -> OUT.mp4, no sound
+  python capture.py DIR chunk A B OUT     frames A..B-1 (24 fps) -> OUT.mp4, no sound
 
 DIR holds stage.html, stations.js, lesson.json, env.json, host.vrm and dress.png. Every frame depends only on its time,
 except hair physics and mouth smoothing, which a 3-second warm-up before the first frame settles.
@@ -15,7 +15,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-FPS = 30
+FPS = 24  # cinema rate: 20% fewer frames than 30 on the runners' CPUs (= stage.html FPS)
 d = Path(sys.argv[1]).resolve()
 mode = sys.argv[2]
 

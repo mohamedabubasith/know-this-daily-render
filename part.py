@@ -27,7 +27,7 @@ from shorts import pipeline as p
 kind, job = sys.argv[1], Path(sys.argv[-1]).resolve()
 film = json.loads(gzip.decompress(base64.b64decode(os.environ["FILM_GZ_B64"])))
 LESSON = film.get("format") == "lesson"  # a 16:9 lesson with the 3D host: three.js stage, not HyperFrames
-FPS = 30 if LESSON else 24
+FPS = 24  # lessons too: 30 made the 1440p render miss GitHub's 60-minute job limit
 EN = film.get("lang") == "en"  # narrated in English (Kokoro on this runner's CPU): the Kayal voice runners sit out
 cache = job.parent.parent / "cache"  # the same place make_video looks
 work, project = job / "work", job / "project"

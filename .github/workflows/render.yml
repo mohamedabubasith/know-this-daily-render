@@ -87,7 +87,7 @@ jobs:
           echo "format=$fmt" >> "$GITHUB_OUTPUT"
           echo "lang=$(python3 -c "import json; print(json.load(open('job/$JOB_ID/film.json')).get('lang') or 'ta')")" >> "$GITHUB_OUTPUT"
           # render runners: a 16:9 lesson (3D, Chrome on CPU) needs many; a Short renders on 4
-          n=$([ "$fmt" = lesson ] && echo 18 || echo "$RENDER_PARTS")
+          n=$([ "$fmt" = lesson ] && echo 20 || echo "$RENDER_PARTS")  # 20 = the free plan's limit of jobs at once
           echo "nparts=$n" >> "$GITHUB_OUTPUT"
           echo "parts=$(python3 -c "import json; print(json.dumps(list(range($n))))")" >> "$GITHUB_OUTPUT"
           # a lesson's real objects: one runner each (each runner has its own free GPU quota on Hugging Face)
