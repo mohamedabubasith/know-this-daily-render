@@ -250,7 +250,7 @@ for (const e of ERR) console.error("STATION " + e);
 // ---------- post: DOF, bloom, whip blur, grade ----------
 const comp = new EffectComposer(R, new THREE.WebGLRenderTarget(W * PR, H * PR, { samples: SMALL ? 0 : 4, type: THREE.HalfFloatType })); comp.setPixelRatio(PR);
 comp.addPass(new RenderPass(set, cam));
-const bokeh = new BokehPass(set, cam, { focus: 9.5, aperture: 0.0007, maxblur: 0.005 }); comp.addPass(bokeh);
+const bokeh = new BokehPass(set, cam, { focus: 9.5, aperture: 0.00025, maxblur: 0.0025 }); comp.addPass(bokeh);
 comp.addPass(new UnrealBloomPass(new THREE.Vector2(W, H), THEME === "light" ? 0.12 : 0.45, 0.5, THEME === "light" ? 1.4 : 0.97));  // a bright set must not glow all over
 comp.addPass(new OutputPass());
 const grade = new ShaderPass({

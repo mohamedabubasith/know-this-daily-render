@@ -1,0 +1,246 @@
+<!doctype html>
+<!-- Hand-built 3D objects for the lessons (three.js code, exported as GLB with GLTFExporter). objects.py runs this page
+     in headless Chrome and saves window.GLB[name] (base64) as model-<name>.glb for the models library. No GPU needed. -->
+<html><head><meta charset="utf-8">
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"}}</script>
+</head><body><script type="module">
+import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
+import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
+
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+const std = (color, rough = 0.5, metal = 0, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, ...extra });
+const glow = (color, i = 1.5) => new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: i, roughness: 0.4 });
+function mesh(geo, mat, x = 0, y = 0, z = 0, parent) { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); if (parent) parent.add(m); return m; }
+const rbox = (w, h, d, r, mat, x, y, z, p) => mesh(new RoundedBoxGeometry(w, h, d, 4, Math.min(r, w / 2 - 1e-3, h / 2 - 1e-3, d / 2 - 1e-3)), mat, x, y, z, p);
+const box = (w, h, d, mat, x, y, z, p) => mesh(new THREE.BoxGeometry(w, h, d), mat, x, y, z, p);
+const cyl = (rt, rb, h, mat, x, y, z, p, seg = 48) => mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat, x, y, z, p);
+function canvas(w, h, draw) { const c = document.createElement("canvas"); c.width = w; c.height = h; draw(c.getContext("2d"), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; }
+function rr(x, ctx, X, Y, W, H, R) { ctx.beginPath(); ctx.roundRect(X, Y, W, H, R); ctx[x](); }
+const screenMat = (tex, i = 0.9) => new THREE.MeshStandardMaterial({ map: tex, emissiveMap: tex, emissive: 0xffffff, emissiveIntensity: i, roughness: 0.25 });
+function extrude(shape, depth, mat, bevel = 0.02) { const g = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: bevel > 0, bevelSize: bevel, bevelThickness: bevel, bevelSegments: 3, curveSegments: 24 }); g.translate(0, 0, -depth / 2); return new THREE.Mesh(g, mat); }
+
+const APPS = ["#FF6B5B", "#FFB443", "#3DDC97", "#2EC4F1", "#7B6CF6", "#F25F9C", "#00B3A4", "#F4D35E", "#5B8CFF", "#FF8A3D", "#44C767", "#B36CF6"];
+const phoneScreen = () => canvas(360, 760, (c, w, h) => {
+  const g = c.createLinearGradient(0, 0, w, h); g.addColorStop(0, "#1D3B6B"); g.addColorStop(1, "#5B3E96"); c.fillStyle = g; c.fillRect(0, 0, w, h);
+  c.fillStyle = "#fff"; c.font = "600 30px sans-serif"; c.fillText("9:41", 30, 52);
+  c.font = "300 92px sans-serif"; c.textAlign = "center"; c.fillText("9:41", w / 2, 190);
+  for (let i = 0; i < 16; i++) { const col = i % 4, row = Math.floor(i / 4); c.fillStyle = APPS[i % APPS.length]; rr("fill", c, 34 + col * 78, 270 + row * 92, 60, 60, 16); }
+  c.fillStyle = "rgba(255,255,255,.25)"; rr("fill", c, 22, 650, w - 44, 84, 30);
+  for (let i = 0; i < 4; i++) { c.fillStyle = APPS[(i * 3 + 1) % APPS.length]; rr("fill", c, 46 + i * 78, 662, 58, 58, 15); }
+});
+const desktopScreen = () => canvas(1024, 600, (c, w, h) => {
+  const g = c.createLinearGradient(0, 0, w, h); g.addColorStop(0, "#0E7C86"); g.addColorStop(1, "#1B3A6B"); c.fillStyle = g; c.fillRect(0, 0, w, h);
+  c.fillStyle = "#F7F7F5"; rr("fill", c, 120, 70, 620, 420, 14);
+  c.fillStyle = "#E6E8EC"; rr("fill", c, 120, 70, 620, 44, 14); c.fillRect(120, 96, 620, 18);
+  ["#FF5F57", "#FEBC2E", "#28C840"].forEach((col, i) => { c.fillStyle = col; c.beginPath(); c.arc(148 + i * 26, 92, 8, 0, 7); c.fill(); });
+  const bars = [120, 190, 150, 250, 210, 300]; bars.forEach((b, i) => { c.fillStyle = i === 5 ? "#F2A23A" : "#1F9A93"; rr("fill", c, 170 + i * 85, 450 - b, 55, b, 8); });
+  c.fillStyle = "rgba(255,255,255,.85)"; rr("fill", c, 780, 90, 190, 120, 14); rr("fill", c, 780, 230, 190, 120, 14);
+  c.fillStyle = "rgba(255,255,255,.3)"; rr("fill", c, 330, 545, 364, 44, 14);
+});
+const keysTex = (cols, rows, w = 1024, h = 420) => canvas(w, h, (c) => {
+  c.fillStyle = "#2B2E33"; c.fillRect(0, 0, w, h);
+  const kw = (w - 40) / cols, kh = (h - 30) / rows;
+  for (let r = 0; r < rows; r++) for (let k = 0; k < cols; k++) {
+    if (r === rows - 1 && k > 3 && k < cols - 4) { if (k === 4) { c.fillStyle = "#16181B"; rr("fill", c, 20 + 4 * kw + 3, 15 + r * kh + 3, kw * (cols - 8) - 6, kh - 6, 6); } continue; }
+    c.fillStyle = "#16181B"; rr("fill", c, 20 + k * kw + 3, 15 + r * kh + 3, kw - 6, kh - 6, 6);
+  }
+});
+
+const B = {};
+
+B["smartphone"] = () => {
+  const g = new THREE.Group();
+  rbox(0.78, 1.6, 0.085, 0.1, std(0x2A2D33, 0.3, 0.8), 0, 0.8, 0, g);
+  rbox(0.72, 1.54, 0.01, 0.08, std(0x050608, 0.15), 0, 0.8, 0.043, g);
+  const scr = mesh(new THREE.PlaneGeometry(0.68, 1.46), screenMat(phoneScreen()), 0, 0.8, 0.0495, g);
+  rbox(0.2, 0.05, 0.01, 0.024, std(0x000000, 0.2), 0, 1.5, 0.051, g);           // the camera island at the top of the screen
+  rbox(0.012, 0.18, 0.03, 0.006, std(0x3A3D44, 0.3, 0.8), 0.395, 1.15, 0, g);    // side buttons
+  rbox(0.012, 0.12, 0.03, 0.006, std(0x3A3D44, 0.3, 0.8), -0.395, 1.2, 0, g);
+  rbox(0.26, 0.26, 0.02, 0.06, std(0x1A1C20, 0.3, 0.6), -0.2, 1.42, -0.05, g);   // rear camera bump
+  return g;
+};
+
+B["laptop"] = () => {
+  const g = new THREE.Group(), alu = std(0xC9CDD2, 0.35, 0.85);
+  rbox(2.2, 0.07, 1.5, 0.03, alu, 0, 0.035, 0, g);
+  mesh(new THREE.PlaneGeometry(1.95, 0.8).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: keysTex(14, 5), roughness: 0.6 }), 0, 0.071, -0.2, g);
+  rbox(0.8, 0.005, 0.42, 0.03, std(0xB8BDC3, 0.25, 0.7), 0, 0.072, 0.43, g);
+  const lid = new THREE.Group(); lid.position.set(0, 0.07, -0.74); lid.rotation.x = -0.32; g.add(lid);
+  rbox(2.2, 1.45, 0.05, 0.03, alu, 0, 0.725, -0.025, lid);
+  rbox(2.12, 1.37, 0.006, 0.02, std(0x0A0B0D, 0.2), 0, 0.725, 0.002, lid);
+  mesh(new THREE.PlaneGeometry(2.0, 1.25), screenMat(desktopScreen()), 0, 0.73, 0.007, lid);
+  return g;
+};
+
+B["desktop-computer"] = () => {
+  const g = new THREE.Group(), dark = std(0x1E2024, 0.35, 0.4), alu = std(0xBFC4C9, 0.35, 0.85);
+  rbox(0.9, 0.04, 0.55, 0.02, alu, 0, 0.02, -0.1, g);
+  rbox(0.16, 0.75, 0.06, 0.03, alu, 0, 0.42, -0.25, g);
+  rbox(2.4, 1.45, 0.08, 0.04, dark, 0, 1.3, -0.18, g);
+  mesh(new THREE.PlaneGeometry(2.3, 1.35), screenMat(desktopScreen()), 0, 1.3, -0.138, g);
+  const kb = rbox(1.6, 0.04, 0.5, 0.02, alu, -0.15, 0.02, 0.62, g);
+  mesh(new THREE.PlaneGeometry(1.5, 0.42).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: keysTex(15, 5), roughness: 0.6 }), -0.15, 0.042, 0.62, g);
+  const mouse = mesh(new THREE.SphereGeometry(0.12, 32, 16).scale(0.75, 0.4, 1.1), std(0xE9EBEE, 0.3), 0.95, 0.04, 0.62, g);
+  return g;
+};
+
+B["server-rack"] = () => {
+  const g = new THREE.Group(), frame = std(0x24272C, 0.45, 0.6);
+  rbox(1.1, 2.3, 1.0, 0.04, frame, 0, 1.2, 0, g);
+  const vent = canvas(512, 64, (c, w, h) => { c.fillStyle = "#2E3238"; c.fillRect(0, 0, w, h); c.fillStyle = "#14161A"; for (let x = 20; x < 330; x += 14) rr("fill", c, x, 14, 7, 36, 3); c.fillStyle = "#3C4148"; rr("fill", c, 360, 18, 120, 28, 6); });
+  const ventMat = new THREE.MeshStandardMaterial({ map: vent, roughness: 0.5, metalness: 0.5 });
+  for (let i = 0; i < 11; i++) {
+    const y = 0.28 + i * 0.18;
+    rbox(0.98, 0.15, 0.06, 0.01, std(0x3A3F46, 0.4, 0.7), 0, y, 0.48, g);
+    mesh(new THREE.PlaneGeometry(0.94, 0.12), ventMat, 0, y, 0.512, g);
+    [0x3DDC97, 0x3DDC97, 0x2EC4F1].forEach((col, k) => mesh(new THREE.SphereGeometry(0.014, 12, 8), glow(i % 4 === 2 && k === 1 ? 0xF2A23A : col, 2.5), 0.3 + k * 0.045, y + 0.035, 0.52, g));
+  }
+  for (const x of [-0.45, 0.45]) for (const z of [-0.42, 0.42]) cyl(0.04, 0.05, 0.08, std(0x111214, 0.5), x, 0.04, z, g, 16);
+  rbox(1.0, 0.06, 0.04, 0.01, std(0x4A4F57, 0.3, 0.8), 0, 2.2, 0.5, g);
+  return g;
+};
+
+B["small-house"] = () => {
+  const g = new THREE.Group();
+  rbox(2.3, 0.12, 1.9, 0.02, std(0xB9B3AA, 0.8), 0, 0.06, 0, g);                        // plinth
+  rbox(2.0, 1.3, 1.6, 0.02, std(0xF3E6CF, 0.85), 0, 0.77, 0, g);                         // walls
+  const s = new THREE.Shape(); s.moveTo(-1.25, 0); s.lineTo(1.25, 0); s.lineTo(0, 0.95); s.closePath();
+  const roof = extrude(s, 2.0, std(0xB5482F, 0.7), 0.03); roof.rotation.y = Math.PI / 2; roof.position.set(0, 1.42, 0); g.add(roof);
+  const ss = new THREE.Shape(); ss.moveTo(-1.0, 0); ss.lineTo(1.0, 0); ss.lineTo(0, 0.76); ss.closePath();
+  const gable = extrude(ss, 1.6, std(0xF3E6CF, 0.85), 0); gable.rotation.y = Math.PI / 2; gable.position.set(0, 1.42, 0); g.add(gable);
+  box(0.26, 0.6, 0.26, std(0x9E4A36, 0.8), 0.55, 2.0, -0.3, g);                          // chimney
+  rbox(0.5, 0.86, 0.06, 0.02, std(0x8A5A35, 0.6), 0, 0.55, 0.81, g);                      // door
+  mesh(new THREE.SphereGeometry(0.035, 16, 12), std(0xD4A63A, 0.3, 1), 0.16, 0.55, 0.85, g);
+  rbox(0.9, 0.08, 0.3, 0.02, std(0xB9B3AA, 0.8), 0, 0.16, 0.95, g);                       // step
+  for (const x of [-0.65, 0.65]) {
+    rbox(0.5, 0.5, 0.06, 0.02, std(0xFFFFFF, 0.5), x, 0.95, 0.81, g);
+    box(0.4, 0.4, 0.02, std(0x7EC8E3, 0.05, 0.2, { emissive: 0x2A6F8A, emissiveIntensity: 0.25 }), x, 0.95, 0.84, g);
+    box(0.03, 0.42, 0.03, std(0xFFFFFF, 0.5), x, 0.95, 0.85, g); box(0.42, 0.03, 0.03, std(0xFFFFFF, 0.5), x, 0.95, 0.85, g);
+  }
+  return g;
+};
+
+B["house-key"] = () => {
+  const s = new THREE.Shape();
+  s.absarc(0, 0, 0.42, 0, Math.PI * 2, false);
+  const hole = new THREE.Path(); hole.absarc(0, 0.12, 0.12, 0, Math.PI * 2, true); s.holes.push(hole);
+  const blade = new THREE.Shape();
+  blade.moveTo(-0.11, -0.3); blade.lineTo(0.11, -0.3); blade.lineTo(0.11, -1.9); blade.lineTo(0.02, -2.02); blade.lineTo(-0.11, -1.95);
+  [[-1.85, 0.06], [-1.7, 0.16], [-1.55, 0.06], [-1.42, 0.2], [-1.28, 0.08], [-1.14, 0.17], [-1.0, 0]].forEach(([y, d]) => blade.lineTo(-0.11 - d, y));
+  blade.lineTo(-0.11, -0.3);
+  const brass = std(0xD8B04A, 0.28, 1);
+  const g = new THREE.Group(), k = new THREE.Group();
+  k.add(extrude(s, 0.07, brass, 0.02)); k.add(extrude(blade, 0.06, brass, 0.012));
+  box(0.36, 0.08, 0.09, brass, 0, -0.38, 0, k);
+  k.position.y = 2.05; g.add(k);
+  return g;
+};
+
+B["yellow-taxi"] = () => {
+  const g = new THREE.Group(), paint = std(0xF6C12B, 0.3, 0.3), glass = std(0x1C2633, 0.08, 0.6), black = std(0x15171A, 0.6);
+  const p = new THREE.Shape();  // side profile, front to the right
+  p.moveTo(-2.05, 0.35); p.lineTo(-2.1, 0.85); p.quadraticCurveTo(-2.05, 1.0, -1.7, 1.02); p.lineTo(-1.2, 1.05);
+  p.quadraticCurveTo(-0.9, 1.55, -0.55, 1.58); p.lineTo(0.55, 1.58); p.quadraticCurveTo(0.95, 1.55, 1.3, 1.08);
+  p.lineTo(1.9, 0.98); p.quadraticCurveTo(2.12, 0.92, 2.12, 0.62); p.lineTo(2.08, 0.35); p.closePath();
+  const body = extrude(p, 1.5, paint, 0.08); body.rotation.y = 0; g.add(body);
+  const w = new THREE.Shape();  // side windows
+  w.moveTo(-1.05, 1.08); w.quadraticCurveTo(-0.82, 1.48, -0.52, 1.5); w.lineTo(0.5, 1.5); w.quadraticCurveTo(0.85, 1.47, 1.15, 1.08); w.closePath();
+  const win = extrude(w, 1.68, glass, 0.01); g.add(win);
+  box(0.04, 0.42, 1.7, paint, -0.02, 1.29, 0, g);                                          // pillar between the windows
+  const chk = canvas(512, 32, (c, W, H) => { for (let i = 0; i < 32; i++) for (let j = 0; j < 2; j++) { c.fillStyle = (i + j) % 2 ? "#111" : "#F6C12B"; c.fillRect(i * 16, j * 16, 16, 16); } });
+  for (const z of [0.835, -0.835]) { const st = mesh(new THREE.PlaneGeometry(3.6, 0.12), new THREE.MeshStandardMaterial({ map: chk, roughness: 0.4 }), 0.05, 0.8, z, g); if (z < 0) st.rotation.y = Math.PI; }
+  for (const [x, z] of [[-1.3, 0.72], [1.35, 0.72], [-1.3, -0.72], [1.35, -0.72]]) {
+    const wh = cyl(0.36, 0.36, 0.3, black, x, 0.36, z, g, 40); wh.rotation.x = Math.PI / 2;
+    const hub = cyl(0.2, 0.2, 0.31, std(0xC9CDD2, 0.25, 1), x, 0.36, z, g, 32); hub.rotation.x = Math.PI / 2;
+  }
+  rbox(0.08, 0.16, 0.42, 0.03, glow(0xFFF6D8, 1.2), 2.1, 0.75, 0.5, g); rbox(0.08, 0.16, 0.42, 0.03, glow(0xFFF6D8, 1.2), 2.1, 0.75, -0.5, g);
+  rbox(0.08, 0.14, 0.32, 0.03, glow(0xE0322B, 1.0), -2.1, 0.8, 0.52, g); rbox(0.08, 0.14, 0.32, 0.03, glow(0xE0322B, 1.0), -2.1, 0.8, -0.52, g);
+  rbox(0.12, 0.2, 1.62, 0.05, black, 2.12, 0.42, 0, g); rbox(0.12, 0.2, 1.62, 0.05, black, -2.1, 0.42, 0, g);
+  const sign = canvas(256, 80, (c, W, H) => { c.fillStyle = "#FFF4C2"; c.fillRect(0, 0, W, H); c.fillStyle = "#111"; c.font = "900 58px sans-serif"; c.textAlign = "center"; c.fillText("TAXI", W / 2, 62); });
+  rbox(0.62, 0.2, 0.3, 0.04, new THREE.MeshStandardMaterial({ color: 0xFFF4C2, roughness: 0.4 }), 0, 1.72, 0, g);
+  for (const z of [0.152, -0.152]) { const pl = mesh(new THREE.PlaneGeometry(0.56, 0.17), screenMat(sign, 0.6), 0, 1.72, z, g); if (z < 0) pl.rotation.y = Math.PI; }
+  return g;
+};
+
+B["electricity-meter"] = () => {
+  const g = new THREE.Group();
+  rbox(1.2, 1.7, 0.55, 0.12, std(0xEDEFF1, 0.45), 0, 0.85, 0, g);
+  rbox(0.9, 0.55, 0.06, 0.05, std(0x2B2F35, 0.3), 0, 1.15, 0.29, g);
+  const lcd = canvas(512, 256, (c, W, H) => { c.fillStyle = "#9FD8A6"; c.fillRect(0, 0, W, H); c.fillStyle = "#13301A"; c.font = "700 120px monospace"; c.textAlign = "center"; c.fillText("04217", W / 2, 150); c.font = "700 48px sans-serif"; c.fillText("kWh", W / 2, 225); });
+  mesh(new THREE.PlaneGeometry(0.78, 0.42), screenMat(lcd, 0.5), 0, 1.15, 0.325, g);
+  const disc = cyl(0.26, 0.26, 0.03, std(0xC9CDD2, 0.3, 0.9), 0, 0.55, 0.26, g); disc.rotation.x = Math.PI / 2;
+  mesh(new THREE.SphereGeometry(0.33, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(Math.PI / 2), std(0xFFFFFF, 0.05, 0, { transparent: true, opacity: 0.35 }), 0, 0.55, 0.27, g);
+  box(0.06, 0.06, 0.04, glow(0xE0322B, 2), 0.42, 1.55, 0.29, g);
+  for (const x of [-0.3, 0, 0.3]) cyl(0.04, 0.04, 0.5, std(0x222428, 0.5), x, -0.2, 0, g, 16);
+  g.children.forEach(m => m.position.y += 0.45);
+  return g;
+};
+
+B["wall-power-socket"] = () => {
+  const g = new THREE.Group(), white = std(0xF6F6F4, 0.35);
+  rbox(1.4, 1.4, 0.14, 0.12, white, 0, 0.7, 0, g);
+  const face = cyl(0.42, 0.44, 0.06, std(0xEDEDEA, 0.4), -0.05, 0.7, 0.07, g, 64); face.rotation.x = Math.PI / 2;
+  for (const x of [-0.2, 0.1]) { const h = cyl(0.055, 0.055, 0.03, std(0x111111, 0.6), x, 0.7, 0.105, g, 24); h.rotation.x = Math.PI / 2; }
+  rbox(0.16, 0.34, 0.08, 0.04, std(0xFFFFFF, 0.3), 0.52, 0.7, 0.1, g);
+  box(0.06, 0.03, 0.01, glow(0xE0322B, 1.5), 0.52, 0.86, 0.145, g);
+  return g;
+};
+
+B["storage-locker"] = () => {
+  const g = new THREE.Group(), steel = std(0x5B7FA6, 0.45, 0.55), dark = std(0x2A3440, 0.5, 0.5);
+  rbox(1.6, 2.4, 0.9, 0.03, steel, 0, 1.2, 0, g);
+  const vents = canvas(128, 128, (c, W, H) => { c.fillStyle = "#5B7FA6"; c.fillRect(0, 0, W, H); c.fillStyle = "#24364A"; for (let y = 10; y < 120; y += 18) rr("fill", c, 16, y, 96, 8, 4); });
+  const num = n => canvas(128, 64, (c, W, H) => { c.fillStyle = "#F4F1E8"; c.fillRect(0, 0, W, H); c.fillStyle = "#1c1f26"; c.font = "800 44px sans-serif"; c.textAlign = "center"; c.fillText(n, W / 2, 48); });
+  [-0.4, 0.4].forEach((x, i) => {
+    rbox(0.74, 2.24, 0.05, 0.02, std(0x6A8FB8, 0.4, 0.55), x, 1.2, 0.46, g);
+    mesh(new THREE.PlaneGeometry(0.4, 0.4), new THREE.MeshStandardMaterial({ map: vents, roughness: 0.45, metalness: 0.5 }), x, 2.05, 0.487, g);
+    mesh(new THREE.PlaneGeometry(0.24, 0.12), new THREE.MeshStandardMaterial({ map: num(String(12 + i)), roughness: 0.5 }), x, 1.75, 0.487, g);
+    rbox(0.06, 0.32, 0.06, 0.02, std(0xC9CDD2, 0.25, 1), x + 0.26, 1.2, 0.5, g);
+  });
+  const lock = new THREE.Group(); lock.position.set(0.66, 1.0, 0.56); g.add(lock);
+  rbox(0.18, 0.16, 0.07, 0.03, std(0xD8B04A, 0.3, 1), 0, 0, 0, lock);
+  mesh(new THREE.TorusGeometry(0.06, 0.016, 12, 32, Math.PI), std(0xC9CDD2, 0.25, 1), 0, 0.08, 0, lock);
+  box(1.6, 0.1, 0.92, dark, 0, 0.05, 0, g);
+  return g;
+};
+
+B["steel-tea-kettle"] = () => {
+  const g = new THREE.Group(), steel = std(0xD9DDE1, 0.18, 1), blk = std(0x1A1B1E, 0.5);
+  const pts = [[0, 0], [0.62, 0], [0.7, 0.05], [0.74, 0.3], [0.7, 0.62], [0.55, 0.85], [0.36, 0.95], [0.3, 1.0], [0, 1.0]].map(([x, y]) => new THREE.Vector2(x, y));
+  mesh(new THREE.LatheGeometry(pts, 64), steel, 0, 0, 0, g);
+  mesh(new THREE.SphereGeometry(0.09, 24, 12), blk, 0, 1.06, 0, g);
+  const spout = new THREE.CatmullRomCurve3([V(0.6, 0.3, 0), V(0.9, 0.45, 0), V(1.08, 0.72, 0), V(1.2, 0.86, 0)]);
+  mesh(new THREE.TubeGeometry(spout, 32, 0.07, 16), steel, 0, 0, 0, g);
+  const handle = new THREE.CatmullRomCurve3([V(-0.45, 0.95, 0), V(-0.3, 1.45, 0), V(0.3, 1.45, 0), V(0.45, 0.95, 0)]);
+  mesh(new THREE.TubeGeometry(handle, 40, 0.06, 16), blk, 0, 0, 0, g);
+  return g;
+};
+
+B["red-brick"] = () => {
+  const g = new THREE.Group();
+  const tex = canvas(256, 128, (c, W, H) => { c.fillStyle = "#A8432C"; c.fillRect(0, 0, W, H); for (let i = 0; i < 900; i++) { c.fillStyle = `rgba(${Math.random() < 0.5 ? "60,20,10" : "220,140,110"},${Math.random() * 0.25})`; c.fillRect(Math.random() * W, Math.random() * H, 2 + Math.random() * 4, 2 + Math.random() * 3); } });
+  rbox(2.2, 0.65, 1.05, 0.05, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9 }), 0, 0.325, 0, g);
+  return g;
+};
+
+B["folded-cotton-saree"] = () => {
+  const g = new THREE.Group();
+  const cloth = (base, border) => canvas(512, 256, (c, W, H) => { c.fillStyle = base; c.fillRect(0, 0, W, H); c.fillStyle = border; c.fillRect(0, H - 52, W, 52); c.fillStyle = "#F2C94C"; for (let x = 8; x < W; x += 28) { c.beginPath(); c.arc(x, H - 26, 7, 0, 7); c.fill(); } c.strokeStyle = "rgba(255,255,255,.18)"; for (let y = 12; y < H - 60; y += 22) { c.beginPath(); c.moveTo(0, y); c.lineTo(W, y); c.stroke(); } });
+  [["#C8324B", "#7A1C33"], ["#1F8A8A", "#0E4D57"], ["#E8A33D", "#8A4B12"]].forEach(([a, b], i) => {
+    const t = cloth(a, b);
+    rbox(1.8, 0.24, 1.2, 0.1, new THREE.MeshStandardMaterial({ map: t, roughness: 0.85 }), 0.04 * (i - 1), 0.12 + i * 0.25, 0.03 * i, g);
+  });
+  return g;
+};
+
+const ex = new GLTFExporter();
+window.GLB = {};
+for (const [name, build] of Object.entries(B)) {
+  const scene = new THREE.Scene(); const obj = build(); obj.name = name; scene.add(obj);
+  const buf = await ex.parseAsync(scene, { binary: true });
+  window.GLB[name] = btoa(new Uint8Array(buf).reduce((s, b) => s + String.fromCharCode(b), ""));
+}
+window.DONE = true;
+</script></body></html>
