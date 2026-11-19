@@ -59,7 +59,7 @@ with sync_playwright() as p:
         a, z, out = int(sys.argv[3]), int(sys.argv[4]), sys.argv[5]
         pg, errs = open_page(b, a / FPS)
         enc = subprocess.Popen(["ffmpeg", "-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", str(FPS), "-c:v", "mjpeg", "-i", "-",
-                                "-c:v", "libx264", "-preset", "medium", "-crf", "19", "-pix_fmt", "yuv420p", "-r", str(FPS), out], stdin=subprocess.PIPE)
+                                "-c:v", "libx264", "-preset", "medium", "-crf", "21", "-pix_fmt", "yuv420p", "-r", str(FPS), out], stdin=subprocess.PIPE)
         for i in range(a, z):
             pg.evaluate(f"renderAt({i / FPS})")
             enc.stdin.write(pg.screenshot(type="jpeg", quality=92))

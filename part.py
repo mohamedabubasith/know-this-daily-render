@@ -245,6 +245,14 @@ elif kind == "join":
     p.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(job / "chunks.txt"), "-i", str(sound),
            "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-t", f"{duration():.3f}",
            "-movflags", "+faststart", str(job / "video.mp4")], "join")
+    mbps = (job / "video.mp4").stat().st_size * 8 / 1e6 / max(1.0, duration())
+    if mbps > 7:  # n8n holds the whole file in memory on its way to YouTube: a 280 MB video crashed it
+        big = job / "video-big.mp4"
+        (job / "video.mp4").replace(big)
+        p.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(big), "-c:v", "libx264", "-preset", "medium", "-crf", "23", "-maxrate", "6M",
+               "-bufsize", "12M", "-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart", str(job / "video.mp4")], "shrink")
+        big.unlink()
+        print(f"shrunk from {mbps:.1f} Mbps", flush=True)
     got, want = p.probe(job / "video.mp4"), duration()
     facts = json.loads((job / "prepared.json").read_text())
     if abs(got - want) > 0.5 or not p.has_audio(job / "video.mp4"):

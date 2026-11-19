@@ -308,7 +308,7 @@ window.renderAt = (t) => {
   dust.position.y = 0.15 * Math.sin(t * 0.3); dust.rotation.y = 0;
   bokeh.uniforms.focus.value = pos.distanceTo(tgt) - 0.6;
   const vx = Math.abs(pos.x - camAt(Math.max(0, t - 1 / 30)).pos.x);
-  grade.uniforms.blur.value = Math.min(0.07, vx * 0.05); grade.uniforms.time.value = (t * 30) % 97;
+  grade.uniforms.blur.value = Math.min(0.07, vx * 0.05); grade.uniforms.time.value = 0;  // grain fixed in place: moving grain made every frame unique (a 2-minute video was 280 MB)
   R.toneMapping = THREE.ACESFilmicToneMapping; comp.render();
   act(t); vrm.update(1 / 30);
   R.autoClear = false; R.toneMapping = THREE.NoToneMapping; R.clearDepth(); R.render(host, hcam); R.autoClear = true;

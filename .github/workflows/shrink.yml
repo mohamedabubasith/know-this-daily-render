@@ -1,0 +1,66 @@
+name: shrink
+run-name: "shrink ${{ inputs.job_id }}"
+
+# A finished video too big for the studio to carry to YouTube (n8n holds it in memory) is re-encoded here at a
+# YouTube-friendly bitrate; the studio then serves this run's copy. Started by hand for videos made before join
+# capped the bitrate.
+on:
+  workflow_dispatch:
+    inputs:
+      job_id: { description: "Studio job id", required: true, type: string }
+      from_run: { description: "The render run that made the video", required: true, type: string }
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  shrink:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: ffmpeg cache
+        uses: actions/cache@v4
+        with:
+          path: ~/ffmpeg-static
+          key: ffmpeg-static-btbn-n8.1-v1
+      - name: ffmpeg
+        run: |
+          if [ ! -x "$HOME/ffmpeg-static/bin/ffmpeg" ]; then
+            mkdir -p "$HOME/ffmpeg-static"
+            curl -fsSL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz | tar -xJ --strip-components=1 -C "$HOME/ffmpeg-static"
+          fi
+          echo "$HOME/ffmpeg-static/bin" >> "$GITHUB_PATH"
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.job_id }}-video
+          run-id: ${{ inputs.from_run }}
+          github-token: ${{ github.token }}
+          path: big
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.job_id }}-preview
+          run-id: ${{ inputs.from_run }}
+          github-token: ${{ github.token }}
+          path: out
+      - name: Re-encode
+        run: |
+          mkdir -p out
+          ffmpeg -y -loglevel error -i big/video.mp4 -c:v libx264 -preset medium -crf 23 -maxrate 6M -bufsize 12M -pix_fmt yuv420p -c:a copy -movflags +faststart out/video.mp4
+          ls -la big/video.mp4 out/video.mp4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.job_id }}-video
+          path: out/video.mp4
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.job_id }}-preview
+          path: out/preview.mp4
+          retention-days: 30
+      - name: The studio serves this copy from now on
+        env:
+          STUDIO_URL: ${{ secrets.STUDIO_URL }}
+        run: |
+          curl -fsS -m 60 -X POST "$STUDIO_URL?p=/gh/swap" -H 'Content-Type: application/json' \
+            -d "{\"job\":\"${{ inputs.job_id }}\",\"from_run\":\"${{ inputs.from_run }}\",\"run\":\"$GITHUB_RUN_ID\"}"
