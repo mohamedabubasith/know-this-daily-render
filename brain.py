@@ -137,6 +137,7 @@ def meta_of(film: dict) -> dict:
     meta["category"] = film.get("category") or ("kids" if meta["for_kids"] else "education")
     meta["category_id"] = p.YT_CATEGORY.get(meta["category"], "27")
     meta["has_en"] = False
+    meta["lang"] = film.get("lang") or "ta"  # the spoken language: the upload's default language
     return meta
 
 

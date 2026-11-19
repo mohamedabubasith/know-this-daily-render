@@ -53,6 +53,7 @@ jobs:
     outputs:
       film: ${{ steps.film.outputs.film }}
       format: ${{ steps.film.outputs.format }}
+      lang: ${{ steps.film.outputs.lang }}
       parts: ${{ steps.film.outputs.parts }}
       nparts: ${{ steps.film.outputs.nparts }}
       models: ${{ steps.film.outputs.models }}
@@ -84,6 +85,7 @@ jobs:
           echo "film=$(gzip -c "job/$JOB_ID/film.json" | base64 -w0)" >> "$GITHUB_OUTPUT"
           fmt=$(python3 -c "import json; print(json.load(open('job/$JOB_ID/film.json')).get('format', ''))")
           echo "format=$fmt" >> "$GITHUB_OUTPUT"
+          echo "lang=$(python3 -c "import json; print(json.load(open('job/$JOB_ID/film.json')).get('lang') or 'ta')")" >> "$GITHUB_OUTPUT"
           # render runners: a 16:9 lesson (3D, Chrome on CPU) needs many; a Short renders on 4
           n=$([ "$fmt" = lesson ] && echo 18 || echo "$RENDER_PARTS")
           echo "nparts=$n" >> "$GITHUB_OUTPUT"
@@ -412,6 +414,20 @@ jobs:
         with:
           name: drawn
           path: job/${{ inputs.job_id }}/project
+      - name: Kokoro model cache
+        if: needs.script.outputs.lang == 'en'
+        uses: actions/cache@v4
+        with:
+          path: ~/kokoro
+          key: kokoro-onnx-model-v1.0
+      - name: Kokoro English voice (Kokoro-82M, Apache-2.0)
+        if: needs.script.outputs.lang == 'en'
+        run: |
+          mkdir -p ~/kokoro && cd ~/kokoro
+          for f in kokoro-v1.0.onnx voices-v1.0.bin; do
+            [ -s "$f" ] || curl -fsSL -o "$f" "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/$f"
+          done
+          ls -la
       - name: Prepare the film
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

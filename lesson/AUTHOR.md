@@ -90,7 +90,8 @@ balls; a fruit that is an orange egg; flat photos in frames instead of objects.
 - Each line of the scene changes something on screen when it starts (`K.at(k)`): a new object, a transformation,
   a highlight, a reveal. The viewer must see what the voice is saying.
 - Use emissive accents and soft sprites for light, sparks, steam, data flow.
-- Short words on labels only (1 to 3 words, mostly Tamil). The captions already show the full sentence; never
+- Short words on labels only (1 to 3 words, mostly Tamil; all English when brief.json `lang` is "en": that
+  lesson is narrated in English for viewers worldwide, and `lesson.json` lines are read from `en`). The captions already show the full sentence; never
   repeat a whole line on a label. No English paragraphs.
 - Deterministic: use `rnd()` (never Math.random) and only `lt` for time (never Date or performance).
 - No external files, no fetch, no DOM. Plain JavaScript in this one file.

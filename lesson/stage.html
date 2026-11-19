@@ -42,7 +42,9 @@ import { VRMLoaderPlugin } from "@pixiv/three-vrm";
 const Q = new URLSearchParams(location.search);
 const ENV = await (await fetch("./env.json")).json();
 const LESSON = await (await fetch("./lesson.json")).json();
-const LINES = LESSON.lines, TA = LINES.map(l => l.ta), SUB = LINES.map(l => String(l.en || "").replace(/\*/g, ""));
+const LINES = LESSON.lines, EN = LESSON.lang === "en", plain = l => String(l.en || "").replace(/\*/g, "");
+// big word-by-word captions in the spoken language; a Tamil lesson adds the English line under them
+const TA = LINES.map(l => EN ? plain(l) : l.ta), SUB = LINES.map(l => EN ? "" : plain(l));
 const START = LINES.map(l => l.start), END = LESSON.dur, N = LINES.length;
 const SEGS = LINES.map(l => [l.start, l.end]);
 const lineEnd = i => i + 1 < N ? START[i + 1] : END;

@@ -28,6 +28,7 @@ kind, job = sys.argv[1], Path(sys.argv[-1]).resolve()
 film = json.loads(gzip.decompress(base64.b64decode(os.environ["FILM_GZ_B64"])))
 LESSON = film.get("format") == "lesson"  # a 16:9 lesson with the 3D host: three.js stage, not HyperFrames
 FPS = 30 if LESSON else 24
+EN = film.get("lang") == "en"  # narrated in English (Kokoro on this runner's CPU): the Kayal voice runners sit out
 cache = job.parent.parent / "cache"  # the same place make_video looks
 work, project = job / "work", job / "project"
 work.mkdir(parents=True, exist_ok=True)
@@ -120,7 +121,7 @@ def stretch(k: int, n: int) -> tuple[float, float]:
 
 
 if kind == "mine":
-    print(1 if share(int(sys.argv[2]), int(sys.argv[3])) else 0)
+    print(1 if not EN and share(int(sys.argv[2]), int(sys.argv[3])) else 0)
 
 elif kind == "voice":
     # Kayal (indic/kayal_voice.py) was started on this runner before the script existed and has loaded the model;
@@ -158,7 +159,7 @@ elif kind == "draw" and LESSON:
     # The 3D scenes, written by Claude to estimated timing while the voice is made; they time themselves to each
     # line's start (K.at), so prepare's real timing fits them.
     sys.path.insert(0, str(Path(__file__).parent / "lesson"))
-    est = [len(s["ta"]) / 11 + sum(z for _, z in sentences(s["ta"])) for s in film["shots"]]
+    est = [len(s["en"]) / 14 if EN else len(s["ta"]) / 11 + sum(z for _, z in sentences(s["ta"])) for s in film["shots"]]
     a, b, dur = lesson_times(est)
     project.mkdir(parents=True, exist_ok=True)
     (project / "lesson.json").write_text(json.dumps({**p.lesson_json(film, a, b, dur), "draft": True}, ensure_ascii=False, indent=1))
@@ -190,9 +191,12 @@ elif kind == "draw":
 
 elif kind == "prepare":
     t = time.monotonic()
-    if os.environ.get("SHORTS_BACKUP_VOICE") == "1":  # voice G: the sentences came from the voice runners
+    if os.environ.get("SHORTS_BACKUP_VOICE") == "1" and not EN:  # voice G: the sentences came from the voice runners
         join_voice()
-    lengths, engine = p.voices(film, work, cache / "voice")
+    if EN:
+        lengths, engine = p.english_voices(film, work, cache / "voice"), "Kokoro (English, af_heart)"
+    else:
+        lengths, engine = p.voices(film, work, cache / "voice")
     sources = p.pictures(film, work, cache / "pictures")
     if LESSON:
         sys.path.insert(0, str(Path(__file__).parent / "lesson"))

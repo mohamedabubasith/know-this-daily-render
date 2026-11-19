@@ -307,7 +307,7 @@ def _lesson_shots(film: dict) -> dict:
     """Lesson lines in the common shot shape; scenes numbered 0, 1, 2... in order whatever Claude wrote."""
     film["format"] = "lesson"
     film["style"] = ""
-    film["subtitles"] = "ta"
+    film["subtitles"] = "en" if film.get("lang") == "en" else "ta"
     seen, last = {}, None
     for s in film["shots"]:
         first = s.get("scene") != last
@@ -331,6 +331,11 @@ def _lesson_shots(film: dict) -> dict:
     return film
 
 
+def _lesson_prompt(lang: str) -> str:
+    """The lesson writer's rules: Tamil narration, or English for an international series (lesson-en.md on top)."""
+    return (PROMPTS / "lesson.md").read_text() + ("\n\n" + (PROMPTS / "lesson-en.md").read_text() if lang == "en" else "")
+
+
 def write_film(plan: dict, previous: list[dict] | None = None) -> tuple[dict, dict]:
     prompt = f"Approved plan:\n{json.dumps(plan, ensure_ascii=False, indent=1)}\n\n"
     if plan.get("notes"):
@@ -341,9 +346,10 @@ def write_film(plan: dict, previous: list[dict] | None = None) -> tuple[dict, di
                    "make sense):\n" + "\n".join(f"- Part {r['part']}: \"{r['title']}\": {r['said'][:900]}" for r in previous) + "\n\n")
     prompt += _text_rule(plan.get("subtitles", "en")) + "Write the full shot list."
     if plan.get("format") == "lesson":
-        film, usage = claude_json((PROMPTS / "lesson.md").read_text(), prompt, LESSON_SCHEMA, "film")
+        film, usage = claude_json(_lesson_prompt(plan.get("lang", "ta")), prompt, LESSON_SCHEMA, "film")
+        film["lang"] = plan.get("lang", "ta")  # the narration language: "en" = Kokoro voice, English captions and labels
         film = clean_film(_lesson_shots(film))
-        film["brief"] = {k: plan.get(k, "") for k in ("topic", "angle", "audience", "notes", "category", "series", "part", "subtitles")}
+        film["brief"] = {k: plan.get(k, "") for k in ("topic", "angle", "audience", "notes", "category", "series", "part", "subtitles", "lang")}
     elif plan.get("format") == "explainer":
         film, usage = claude_json((PROMPTS / "explainer.md").read_text(), prompt, EXPLAINER_SCHEMA, "film")
         film = clean_film(_explainer_shots(film))
@@ -394,9 +400,10 @@ def revise_film(film: dict, change: str) -> tuple[dict, dict]:
                   f"this change:\n{change}\n\nReturn the full revised lesson. Keep every line the change does not touch exactly as "
                   "it is, word for word, so its voice can be reused. If the change is only about how it looks or moves, return "
                   "every line unchanged: the motion designer gets the owner's words too.")
-        film2, usage = claude_json((PROMPTS / "lesson.md").read_text(), prompt, LESSON_SCHEMA, "film-edit")
+        film2, usage = claude_json(_lesson_prompt(film.get("lang", "ta")), prompt, LESSON_SCHEMA, "film-edit")
+        film2["lang"] = film.get("lang", "ta")
         film2 = clean_film(_lesson_shots(film2))
-        for k in ("category", "series", "part", "brief"):
+        for k in ("category", "series", "part", "brief", "subtitles"):
             if k in film:
                 film2[k] = film[k]
         film2["author_change"] = change
@@ -449,6 +456,9 @@ def clean_film(film: dict) -> dict:
     if film.get("format") == "lesson":  # a normal 16:9 video: never tagged as a Short
         musts = [m for m in musts if m != "#shorts"]
         tags = [t for t in tags if t.lower() != "#shorts"]
+    if film.get("lang") == "en":  # an English video for the world: no Tamil tag
+        musts = [m for m in musts if m != "#tamil"]
+        tags = [t for t in tags if "tamil" not in t.lower()]
     tags = musts + [t for t in tags if t.lower() not in musts]  # musts first, so the cap never drops them
     film["hashtags"] = list(dict.fromkeys(re.sub(r"\s+", "", t) for t in tags))[:6]
     en = [h if h.startswith("#") else f"#{h}" for h in film.get("en_hashtags", [])]
@@ -1265,7 +1275,7 @@ def lesson_json(film: dict, starts: list[float], ends: list[float], dur: float) 
     label = (film.get("brief") or {}).get("series") or film.get("series") or ""
     part = int(film.get("part") or 1)
     label = f"{label} · {part:02d}" if label and part > 1 else (label or "Know This Daily")
-    return {"label": label[:40], "dur": round(dur, 3), "lines": [
+    return {"label": label[:40], "dur": round(dur, 3), "lang": film.get("lang", "ta"), "lines": [
         {"ta": s["ta"], "en": s["en"], "scene": s.get("scene", i), "start": round(a, 3), "end": round(b, 3),
          "act": [[x["at"], x["pose"]] + ([x["face"]] if x.get("face") else []) for x in s.get("act", [])]}
         for i, (s, a, b) in enumerate(zip(film["shots"], starts, ends))]}
