@@ -233,49 +233,20 @@ jobs:
           if-no-files-found: ignore
 
   models:
-    # A lesson's real 3D models: from the library (the "models" release), or made now: Z-Image picture -> TRELLIS.2
+    # A lesson's 3D objects from the library (the "models" release): built by Claude in code or free CC0. No GPU.
     needs: script
     if: needs.script.outputs.format == 'lesson' && needs.script.outputs.nmodels != '0'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions:
-      contents: write  # a new model is added to the library release
-      actions: read
+    timeout-minutes: 10
     env:
       FILM_GZ_B64: ${{ needs.script.outputs.film }}
-    strategy:
-      fail-fast: false
-      matrix:
-        part: ${{ fromJSON(needs.script.outputs.models) }}
     steps:
       - uses: actions/checkout@v4
-      - name: ffmpeg cache
-        uses: actions/cache@v4
-        with:
-          path: ~/ffmpeg-static
-          key: ffmpeg-static-btbn-n8.1-v1
-      - name: ffmpeg
-        run: |
-          if [ ! -x "$HOME/ffmpeg-static/bin/ffmpeg" ]; then
-            mkdir -p "$HOME/ffmpeg-static"
-            curl -fsSL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz | tar -xJ --strip-components=1 -C "$HOME/ffmpeg-static"
-          fi
-          echo "$HOME/ffmpeg-static/bin" >> "$GITHUB_PATH"
-      - uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-          prune-cache: false
-          cache-dependency-glob: "requirements*.lock"
-      - name: Python packages
-        run: uv venv -q --python 3.13 .venv && uv pip install -q --python .venv -r requirements.lock
-      - name: Make or fetch my model
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          GH_TOKEN: ${{ github.token }}
-        run: .venv/bin/python lesson/models.py ${{ matrix.part }} "${{ needs.script.outputs.nmodels }}" models
+      - name: Fetch the objects
+        run: python3 lesson/models.py 0 1 models
       - uses: actions/upload-artifact@v4
         with:
-          name: models-${{ matrix.part }}
+          name: models-0
           path: models/*.glb
           retention-days: 1
           if-no-files-found: ignore
