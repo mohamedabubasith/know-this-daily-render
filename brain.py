@@ -1,7 +1,7 @@
 """Claude's desk work for the Know This Daily studio, on a GitHub runner. The studio (n8n) keeps every piece of data;
 this runner fetches one request, does it, sends the answer back and forgets it.
 
-  python brain.py REQ                 a plan, a plan edit, or ideas from the channel stats
+  python brain.py REQ                 a plan, a plan edit, ideas from the channel stats, or today's news picks
   python brain.py film REQ JOB_DIR    the shot list for a video (write, rewrite after a failure, or edit), to JOB_DIR/film.json
   python brain.py done JOB_DIR        tell the studio the video is made: facts, captions, what it said (for the library)
 
@@ -116,6 +116,9 @@ def think(inp: dict) -> dict:
         found = related(f"{inp.get('idea') or ''} {inp['change']}", lib)
         plan, usage = p.revise_plan(inp["plan"], inp["change"], inp.get("idea"), inp.get("changes") or [], found)
         return {"plan": plan, "usage": usage}
+    if op == "news":  # 📰 today's world news: Claude's 3 best stories for a video, from the feeds' own facts
+        stories, usage = p.latest_news(inp.get("made") or [])
+        return {"stories": stories, "usage": usage}
     if op == "ideas":
         stats = inp.get("stats") or {}
         d, usage = p.next_ideas(result_lines(stats, lib), inp.get("made") or [],

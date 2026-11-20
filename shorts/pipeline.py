@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import datetime
 import base64
 import hashlib
 import json
@@ -349,6 +350,11 @@ def _lesson_shots(film: dict) -> dict:
     return film
 
 
+def _prompt(name: str, lang: str) -> str:
+    """A writer's rules (film.md, explainer.md); an English video adds english.md on top."""
+    return (PROMPTS / name).read_text() + ("\n\n" + (PROMPTS / "english.md").read_text() if lang == "en" else "")
+
+
 def _lesson_prompt(lang: str) -> str:
     """The lesson writer's rules: Tamil narration, or English for an international series (lesson-en.md on top)."""
     return (PROMPTS / "lesson.md").read_text() + ("\n\n" + (PROMPTS / "lesson-en.md").read_text() if lang == "en" else "")
@@ -369,16 +375,89 @@ def write_film(plan: dict, previous: list[dict] | None = None) -> tuple[dict, di
         film = clean_film(_lesson_shots(film))
         film["brief"] = {k: plan.get(k, "") for k in ("topic", "angle", "audience", "notes", "category", "series", "part", "subtitles", "lang")}
     elif plan.get("format") == "explainer":
-        film, usage = claude_json((PROMPTS / "explainer.md").read_text(), prompt, EXPLAINER_SCHEMA, "film")
+        film, usage = claude_json(_prompt("explainer.md", plan.get("lang", "ta")), prompt, EXPLAINER_SCHEMA, "film")
+        film["lang"] = plan.get("lang", "ta")
         film = clean_film(_explainer_shots(film))
-        film["brief"] = {k: plan.get(k, "") for k in ("topic", "angle", "audience", "notes", "category", "series", "part", "subtitles")}
+        film["brief"] = {k: plan.get(k, "") for k in ("topic", "angle", "audience", "notes", "category", "series", "part", "subtitles", "lang")}
     else:
-        film, usage = claude_json((PROMPTS / "film.md").read_text(), prompt, FILM_SCHEMA, "film")
+        film, usage = claude_json(_prompt("film.md", plan.get("lang", "ta")), prompt, FILM_SCHEMA, "film")
         film["format"] = plan.get("format") or ("story" if film.get("for_kids") else "facts")
+        film["lang"] = plan.get("lang", "ta")  # "en": English narration (Kokoro), English captions and words on screen
         film = clean_film(film)
     for k in ("category", "series", "part", "subtitles"):
         film[k] = plan.get(k, {"category": "education", "series": "", "part": 1, "subtitles": "en"}[k])
     return trend_tags(film), usage
+
+
+NEWS_FEEDS = {  # free RSS, no key: world news from several outlets, so a story reported by many stands out
+    "BBC": "https://feeds.bbci.co.uk/news/world/rss.xml",
+    "BBC Top": "https://feeds.bbci.co.uk/news/rss.xml",
+    "BBC Science": "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml",
+    "BBC Tech": "https://feeds.bbci.co.uk/news/technology/rss.xml",
+    "Al Jazeera": "https://www.aljazeera.com/xml/rss/all.xml",
+    "NPR": "https://feeds.npr.org/1004/rss.xml",
+    "The Guardian": "https://www.theguardian.com/world/rss",
+    "DW": "https://rss.dw.com/rdf/rss-en-all",
+    "Google News": "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en",
+}
+NEWS_SCHEMA = {
+    "type": "object", "additionalProperties": False, "required": ["stories"],
+    "properties": {"stories": {"type": "array", "minItems": 3, "maxItems": 3, "items": {
+        "type": "object", "additionalProperties": False, "required": ["headline", "summary", "why", "items"],
+        "properties": {"headline": {"type": "string"}, "summary": {"type": "string"}, "why": {"type": "string"},
+                       "items": {"type": "array", "minItems": 1, "maxItems": 4, "items": {"type": "integer"}}}}}},
+}
+
+
+def _feed(name: str, url: str, hours: float = 36) -> list[dict]:
+    """One RSS or RDF feed: its recent items as {source, title, text, link}; nothing if the feed fails."""
+    import email.utils
+    import html
+    import xml.etree.ElementTree as ET
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (news reader)"})
+        root = ET.fromstring(urllib.request.urlopen(req, timeout=20).read())
+    except Exception:  # noqa: BLE001 - one feed down must not stop the others
+        return []
+    out, now = [], time.time()
+    for it in [e for e in root.iter() if e.tag.split("}")[-1] == "item"][:30]:
+        f = {c.tag.split("}")[-1]: (c.text or "").strip() for c in it}
+        when = f.get("pubDate") or f.get("date") or ""
+        try:
+            age = now - (email.utils.parsedate_to_datetime(when).timestamp() if "," in when else
+                         datetime.datetime.fromisoformat(when.replace("Z", "+00:00")).timestamp())
+        except (TypeError, ValueError):
+            age = 0
+        if age > hours * 3600 or not f.get("title"):
+            continue
+        text = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", f.get("description", "")))).strip()
+        out.append({"source": name, "title": html.unescape(f["title"]), "text": text[:280], "link": f.get("link", "")})
+    return out
+
+
+def latest_news(made: list[str]) -> tuple[list[dict], dict]:
+    """Today's world headlines from free feeds; Claude picks the 3 best stories for a video, from those facts only."""
+    with concurrent.futures.ThreadPoolExecutor(len(NEWS_FEEDS)) as ex:
+        items = [x for got in ex.map(lambda kv: _feed(*kv), NEWS_FEEDS.items()) for x in got]
+    seen, uniq = set(), []
+    for x in items:
+        k = re.sub(r"[^a-z0-9]", "", x["title"].lower())[:60]
+        if k not in seen:
+            seen.add(k)
+            uniq.append(x)
+    if len(uniq) < 5:
+        raise StepError("the news feeds did not answer; try again in a few minutes")
+    uniq = uniq[:160]
+    lines = "\n".join(f"{i}. [{x['source']}] {x['title']}" + (f" — {x['text']}" if x["text"] else "") for i, x in enumerate(uniq, 1))
+    prompt = (f"Today's headlines:\n{lines}\n\nTopics the channel already made (do not repeat): "
+              f"{'; '.join(made[-40:]) or 'none'}\n\nPick the 3 best stories.")
+    d, usage = claude_json((PROMPTS / "news.md").read_text(), prompt, NEWS_SCHEMA, "news")
+    stories = []
+    for s in d["stories"][:3]:
+        src = [uniq[i - 1] for i in s["items"] if 1 <= i <= len(uniq)]
+        stories.append({"headline": s["headline"].strip()[:80], "summary": s["summary"].strip()[:1200], "why": s["why"].strip()[:300],
+                        "sources": [{"name": x["source"], "title": x["title"][:200], "link": x["link"][:400]} for x in src]})
+    return stories, usage
 
 
 def _text_rule(subtitles: str) -> str:
@@ -440,15 +519,17 @@ def revise_film(film: dict, change: str) -> tuple[dict, dict]:
                  "Return the full revised shot list. Keep every shot that the change does not touch exactly as it is, "
                  "word for word, so its picture and voice can be reused."))
     if fmt == "explainer":
-        film2, usage = claude_json((PROMPTS / "explainer.md").read_text(), prompt + (
+        film2, usage = claude_json(_prompt("explainer.md", film.get("lang", "ta")), prompt + (
             "\nIf the change is only about how the film looks or moves (drawings, colours, animation, pacing of the "
             "picture), return every line unchanged: the illustrator gets the owner's words too."), EXPLAINER_SCHEMA, "film-edit")
+        film2["lang"] = film.get("lang", "ta")
         film2 = clean_film(_explainer_shots(film2))
         film2["brief"] = film.get("brief", {})
         film2["author_change"] = change  # the illustrator applies it to the drawn scenes
     else:
-        film2, usage = claude_json((PROMPTS / "film.md").read_text(), prompt + _text_rule(subs), FILM_SCHEMA, "film-edit")
+        film2, usage = claude_json(_prompt("film.md", film.get("lang", "ta")), prompt + _text_rule(subs), FILM_SCHEMA, "film-edit")
         film2["format"] = fmt
+        film2["lang"] = film.get("lang", "ta")
         film2 = clean_film(film2)
     for k in ("category", "series", "part", "subtitles"):
         if k in film:
