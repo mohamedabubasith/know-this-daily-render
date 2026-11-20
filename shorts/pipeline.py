@@ -165,11 +165,23 @@ LESSON_SHOT = {
                        "properties": {"at": {"type": "number", "minimum": 0, "maximum": 0.9}, "pose": {"enum": POSES},
                                       "face": {"enum": ["", "sad"]}}}}},
 }
+LESSON_INTRO = {  # the host in the centre says what today's lesson covers, then moves right as scene 0 starts
+    "type": "object", "additionalProperties": False, "required": ["lines", "agenda"],
+    "properties": {
+        "lines": {"type": "array", "minItems": 2, "maxItems": 2, "items": {
+            "type": "object", "additionalProperties": False, "required": ["ta", "en", "mood", "act"],
+            "properties": {k: LESSON_SHOT["properties"][k] for k in ("ta", "en", "mood", "act")}}},
+        "agenda": {"type": "array", "minItems": 3, "maxItems": 3, "items": {
+            "type": "object", "additionalProperties": False, "required": ["ta", "en"],
+            "properties": {"ta": {"type": "string"}, "en": {"type": "string"}}}},
+    },
+}
 LESSON_SCHEMA = {  # a 16:9 lesson with the 3D host (the owner's "Video" button)
     "type": "object", "additionalProperties": False,
     "required": ["hook", "title", "description", "hashtags", "tags", "en_title", "en_description", "en_hashtags",
-                 "voice", "for_kids", "shots"],
+                 "voice", "for_kids", "intro", "shots"],
     "properties": {
+        "intro": LESSON_INTRO,
         "for_kids": {"type": "boolean"},
         "hook": {"type": "string"}, "title": {"type": "string"}, "description": {"type": "string"},
         "hashtags": {"type": "array", "items": {"type": "string"}}, "tags": {"type": "array", "items": {"type": "string"}},
@@ -322,6 +334,12 @@ def _lesson_shots(film: dict) -> dict:
                 objs.append({"slug": slug, "name": str(o["name"])[:60], "look": str(o.get("look", ""))[:400]})
         s.update(kind="scene", image="", objects=objs, anim=NO_ANIM, framing="medium", move="push_in",
                  overlay=NO_OVERLAY, transition="cut")
+    # the intro lines go first, as scene -1: no props, the host in the centre with today's 3 points
+    intro = film.pop("intro", None) or {}
+    film["agenda"] = [{"ta": str(a.get("ta", "")).strip()[:48], "en": str(a.get("en", "")).strip()[:48]} for a in intro.get("agenda", [])][:3]
+    film["shots"] = [{**{k: l.get(k) for k in ("ta", "en", "mood", "act")}, "scene": -1, "intro": True, "picture": "", "kind": "scene",
+                      "image": "", "objects": [], "anim": NO_ANIM, "framing": "medium", "move": "push_in", "overlay": NO_OVERLAY,
+                      "transition": "cut"} for l in intro.get("lines", [])] + film["shots"]
     seen_slugs, film["objects"] = set(), []
     for s in film["shots"]:
         for o in s["objects"]:
@@ -396,7 +414,11 @@ def edit_intent(film: dict, change: str) -> tuple[str, str]:
 
 def revise_film(film: dict, change: str) -> tuple[dict, dict]:
     if film.get("format") == "lesson":
-        prompt = (f"Current lesson:\n{json.dumps(film, ensure_ascii=False, indent=1)}\n\nThe owner watched the video and asks for "
+        view = {k: v for k, v in film.items() if k not in ("shots", "agenda")}
+        view["intro"] = {"lines": [{k: s[k] for k in ("ta", "en", "mood", "act")} for s in film["shots"] if s.get("intro")],
+                         "agenda": film.get("agenda", [])}
+        view["shots"] = [s for s in film["shots"] if not s.get("intro")]
+        prompt = (f"Current lesson:\n{json.dumps(view, ensure_ascii=False, indent=1)}\n\nThe owner watched the video and asks for "
                   f"this change:\n{change}\n\nReturn the full revised lesson. Keep every line the change does not touch exactly as "
                   "it is, word for word, so its voice can be reused. If the change is only about how it looks or moves, return "
                   "every line unchanged: the motion designer gets the owner's words too.")
@@ -460,7 +482,7 @@ def clean_film(film: dict) -> dict:
         musts = [m for m in musts if m != "#tamil"]
         tags = [t for t in tags if "tamil" not in t.lower()]
     tags = musts + [t for t in tags if t.lower() not in musts]  # musts first, so the cap never drops them
-    film["hashtags"] = list(dict.fromkeys(re.sub(r"\s+", "", t) for t in tags))[:6]
+    film["hashtags"] = list(dict.fromkeys(re.sub(r"\s+", "", t) for t in tags))[:12 if film.get("lang") == "en" else 6]
     en = [h if h.startswith("#") else f"#{h}" for h in film.get("en_hashtags", [])]
     en_musts = ["#shorts", "#kidsstory", "#storiesforkids", "#knowthisdaily"] if film.get("for_kids") else \
         ["#shorts", "#facts", "#knowthisdaily"]
@@ -1277,7 +1299,8 @@ def lesson_json(film: dict, starts: list[float], ends: list[float], dur: float) 
     label = (film.get("brief") or {}).get("series") or film.get("series") or ""
     part = int(film.get("part") or 1)
     label = f"{label} · {part:02d}" if label and part > 1 else (label or "Know This Daily")
-    return {"label": label[:40], "dur": round(dur, 3), "lang": film.get("lang", "ta"), "lines": [
+    return {"label": label[:40], "dur": round(dur, 3), "lang": film.get("lang", "ta"), "agenda": film.get("agenda", []),
+            "topic": str((film.get("brief") or {}).get("topic") or film.get("en_title") or "")[:80], "lines": [
         {"ta": s["ta"], "en": s["en"], "scene": s.get("scene", i), "start": round(a, 3), "end": round(b, 3),
          "act": [[x["at"], x["pose"]] + ([x["face"]] if x.get("face") else []) for x in s.get("act", [])]}
         for i, (s, a, b) in enumerate(zip(film["shots"], starts, ends))]}

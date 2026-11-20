@@ -32,7 +32,13 @@ person, not textbook Tamil. 20 to 30 lines in total, 280 to 400 Tamil words (mor
   - never fix a case ending onto an English word (not ஏ ஐ-க்கு): rephrase (ஏ ஐ மாடலுக்கு);
   - English letters and acronyms spelt as spoken, letter by letter with spaces (ஏ ஐ, டி என் ஏ); no hyphens,
     brackets, quotes, emoji or symbols in this field.
-- Line 1 is the hook: a question or a surprise. The last line gives the takeaway and asks viewers to subscribe and
+- Intro (field `intro`), before scene 0: the host stands in the centre and tells the viewer what this lesson
+  covers. `lines`: exactly 2 lines. Line 1 welcomes the viewer and names the lesson: in a series "Welcome to
+  <series>, part <n>." plus a one-line reminder of the last part; otherwise "Welcome to Know This Daily." plus what
+  today is about. Line 2 lists today's 3 points in order ("Today: ..., ... and ..."). `agenda`: those 3 points as
+  on-screen words, 2 to 5 words each, in the order line 2 says them: `ta` in Tamil script, `en` in English. Act:
+  "wave" on line 1, then "one" or "open" on line 2. The intro lines count in the 20 to 30 lines.
+- The first line of scene 0 is the hook: a question or a surprise. The last line gives the takeaway and asks viewers to subscribe and
   follow Know This Daily for the next lesson (or the next part, in a series).
 
 Subtitles (field `en`): natural spoken English for the same line; mark exactly one key word with asterisks.
