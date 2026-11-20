@@ -16,6 +16,8 @@ rules above wherever they differ.
 - Labels on the props are short English words.
 - The last line gives the takeaway and asks viewers to subscribe to Know This Daily for the next lesson of the series.
 - title: English only, max 90 characters, no Tamil script, no " | ". description: 4 to 8 English lines, ending with
-  "Subscribe to Know This Daily for the next lesson." hashtags: 4 to 5 English hashtags people search for this exact
-  subject, then #knowthisdaily; never #tamil, never #shorts. tags: 10 to 20 English keywords. en_title,
+  "Subscribe to Know This Daily for the next lesson." hashtags: 10 to 12 English hashtags for a worldwide
+  audience: first the 3 broadest that people search (e.g. #aws #cloudcomputing #amazonwebservices), then specific
+  and beginner ones (e.g. #awsforbeginners #learnaws #awstutorial #cloudcomputingforbeginners #techexplained), then
+  #knowthisdaily last; never #tamil, never #shorts. tags: 10 to 20 English keywords. en_title,
   en_description, en_hashtags: the same as title, description and hashtags.

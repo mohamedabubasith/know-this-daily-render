@@ -522,9 +522,7 @@ def trend_tags(film: dict) -> dict:
     words = {w for s in seeds for w in s.lower().split()}
     found = [s.lower().strip() for s in found if not OTHER_LANGS.search(s)
              and all(w in words or w in TAG_WORDS for w in s.lower().split())]
-    found = list(dict.fromkeys(found))
-    if not found:
-        return film
+    found = list(dict.fromkeys(found))  # may be empty: the hashtag order below still applies
     # YouTube tags: searched phrases first, then Claude's; YouTube allows 500 characters in all.
     tags, size = [], 0
     for s in found + film.get("tags", []):
@@ -538,16 +536,20 @@ def trend_tags(film: dict) -> dict:
     searched = ["#" + re.sub(r"[^a-z0-9]", "", s) for s in found if len(s.split()) <= 3]
     rest = [h for h in film["hashtags"] if h not in musts]
     out = []
-    for h in musts + rest + searched[:1]:
+    # English lessons reach the whole world: the 3 broadest topic tags first (YouTube shows those above the title),
+    # more searched phrases, the channel tag last; 12 in all (YouTube ignores every hashtag past 15).
+    order = rest + searched[:5] + musts if film.get("lang") == "en" else musts + rest + searched[:1]
+    for h in order:
         if len(h) > 2 and h.lower() not in (x.lower() for x in out):
             out.append(h)
-    film["hashtags"] = out[:6]
+    film["hashtags"] = out[:12] if film.get("lang") == "en" else out[:6]
     en_out = []
     for h in film.get("en_hashtags", [])[:3] + [x for x in searched[:6] if "tamil" not in x] + film.get("en_hashtags", [])[3:]:
         if len(h) > 2 and h.lower() not in (x.lower() for x in en_out):
             en_out.append(h)
     film["en_hashtags"] = en_out[:12]
-    film["tag_source"] = "youtube search"
+    if found:
+        film["tag_source"] = "youtube search"
     return film
 
 
