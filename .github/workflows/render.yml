@@ -479,7 +479,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: chunk-${{ matrix.part }}
-          path: job/${{ inputs.job_id }}/chunk-${{ matrix.part }}.mp4
+          path: |
+            job/${{ inputs.job_id }}/chunk-${{ matrix.part }}.mp4
+            job/${{ inputs.job_id }}/block-*.mp4
           retention-days: 1
 
   join:

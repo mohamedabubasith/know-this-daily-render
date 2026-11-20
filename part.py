@@ -28,6 +28,7 @@ kind, job = sys.argv[1], Path(sys.argv[-1]).resolve()
 film = json.loads(gzip.decompress(base64.b64decode(os.environ["FILM_GZ_B64"])))
 LESSON = film.get("format") == "lesson"  # a 16:9 lesson with the 3D host: three.js stage, not HyperFrames
 FPS = 24  # lessons too: 30 made the 1440p render miss GitHub's 60-minute job limit
+BLOCK = 24  # lesson frames per render block (1 second)
 EN = film.get("lang") == "en"  # narrated in English (Kokoro on this runner's CPU): the Kayal voice runners sit out
 cache = job.parent.parent / "cache"  # the same place make_video looks
 work, project = job / "work", job / "project"
@@ -235,12 +236,14 @@ elif kind == "prepare":
 
 elif kind == "chunk" and LESSON:
     k, n = int(sys.argv[2]), int(sys.argv[3])
+    # Dealt like cards: 1-second blocks K, K+N, K+2N... Busy scenes cost twice the frame time of calm ones,
+    # so even stretches left some runners 23 minutes and others 12.
     frames = round(duration() * FPS)
-    a, b = round(frames * k / n), round(frames * (k + 1) / n)
-    print(f"render stretch {k + 1}/{n}: frames {a} to {b}", flush=True)
+    mine = [f"{a}-{min(a + BLOCK, frames)}" for a in range(k * BLOCK, frames, n * BLOCK)]
+    print(f"render runner {k + 1}/{n}: {len(mine)} blocks of {BLOCK} frames", flush=True)
     t = time.monotonic()
-    p.run([sys.executable, str(Path(__file__).parent / "lesson" / "capture.py"), str(project), "chunk", str(a), str(b), str(job / f"chunk-{k}.mp4")], "3D render")
-    print(f"stretch {k + 1}: {p.probe(job / f'chunk-{k}.mp4'):.2f}s rendered in {(time.monotonic() - t) / 60:.1f} min", flush=True)
+    p.run([sys.executable, str(Path(__file__).parent / "lesson" / "capture.py"), str(project), "chunk", str(job), *mine], "3D render")
+    print(f"runner {k + 1}: {len(mine)} blocks rendered in {(time.monotonic() - t) / 60:.1f} min", flush=True)
 
 elif kind == "chunk":
     k, n = int(sys.argv[2]), int(sys.argv[3])
@@ -252,7 +255,11 @@ elif kind == "chunk":
 
 elif kind == "join":
     n = int(sys.argv[2])
-    parts = [job / f"chunk-{k}.mp4" for k in range(n)]
+    if LESSON:
+        frames = round(duration() * FPS)
+        parts = [job / f"block-{a:06d}.mp4" for a in range(0, frames, BLOCK)]
+    else:
+        parts = [job / f"chunk-{k}.mp4" for k in range(n)]
     missing = [x.name for x in parts if not x.exists()]
     if missing:
         sys.exit(f"missing stretches: {missing}")

@@ -419,6 +419,8 @@ window.renderAt = (t, draw = true) => {  // draw = false: move everything (hair 
 };
 window.__step = t => { for (let i = 0; i < NS; i++) ST[i].up(t - SS[i]); };  // scene code only (check.py)
 const T0 = parseFloat(Q.get("t") || "0");
-for (let i = 0; i < WARM; i++) window.renderAt(Math.max(0, T0 - WARM / FPS + i / FPS), i >= WARM - 2);  // only the last two warm frames are drawn (shaders ready)
+// Settle hair and mouth before t0. Only the last two warm frames are drawn, and only the first time (shaders ready).
+window.warm = (t0, draw = false) => { for (let i = 0; i < WARM; i++) window.renderAt(Math.max(0, t0 - WARM / FPS + i / FPS), draw && i >= WARM - 2); };
+window.warm(T0, true);
 window.__ready = true;
 </script></body></html>

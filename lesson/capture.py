@@ -1,7 +1,7 @@
 """Frames of the lesson stage (stage.html, three.js) with Chrome on CPU.
 
   python capture.py DIR still T [T ...]   DIR/still-T.jpg for each time T, and any scene errors (for the writer's checks)
-  python capture.py DIR chunk A B OUT     frames A..B-1 (24 fps) -> OUT.mp4, no sound
+  python capture.py DIR chunk OUTDIR A-B [A-B ...]   frames A..B-1 (24 fps) of each block -> OUTDIR/block-A.mp4, no sound
 
 DIR holds stage.html, stations.js, lesson.json, env.json, host.vrm and dress.png. Every frame depends only on its time,
 except hair physics and mouth smoothing, which a 3-second warm-up before the first frame settles.
@@ -56,18 +56,21 @@ with sync_playwright() as p:
             print("ERROR", e[:300])
         print("stills:", ", ".join(f"still-{t}.jpg" for t in sys.argv[3:]))
     elif mode == "chunk":
-        a, z, out = int(sys.argv[3]), int(sys.argv[4]), sys.argv[5]
-        pg, errs = open_page(b, a / FPS)
-        enc = subprocess.Popen(["ffmpeg", "-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", str(FPS), "-c:v", "mjpeg", "-i", "-",
-                                "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-r", str(FPS), out], stdin=subprocess.PIPE)
-        for i in range(a, z):
-            pg.evaluate(f"renderAt({i / FPS})")
-            enc.stdin.write(pg.screenshot(type="jpeg", quality=97))
-            if (i - a) % 150 == 0:
-                print(f"frame {i} ({i - a + 1}/{z - a})", flush=True)
-        enc.stdin.close()
-        if enc.wait():
-            sys.exit("ffmpeg failed")
+        out, blocks = Path(sys.argv[3]), [tuple(map(int, r.split("-"))) for r in sys.argv[4:]]
+        pg, errs = open_page(b, blocks[0][0] / FPS)
+        for n, (a, z) in enumerate(blocks):
+            if n:
+                pg.evaluate(f"warm({a / FPS})")  # same page, so hair and mouth settle again before this block
+            enc = subprocess.Popen(["ffmpeg", "-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", str(FPS), "-c:v", "mjpeg", "-i", "-",
+                                    "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-r", str(FPS),
+                                    str(out / f"block-{a:06d}.mp4")], stdin=subprocess.PIPE)
+            for i in range(a, z):
+                pg.evaluate(f"renderAt({i / FPS})")
+                enc.stdin.write(pg.screenshot(type="jpeg", quality=97))
+            enc.stdin.close()
+            if enc.wait():
+                sys.exit("ffmpeg failed")
+            print(f"block {n + 1}/{len(blocks)}: frames {a} to {z}", flush=True)
         for e in dict.fromkeys(errs):
             print("ERROR", e[:300])
     b.close()
