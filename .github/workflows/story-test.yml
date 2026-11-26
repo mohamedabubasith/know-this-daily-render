@@ -1,0 +1,36 @@
+# A test: how long one LTX-Video clip takes on a GitHub runner's CPU (no GPU, no accounts).
+name: story-test
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: what the clip shows
+        default: "Anime film, Studio Ghibli style. A boy with spiky black hair, red hoodie and brown backpack climbs ancient stone stairs floating above white clouds toward a glowing golden wooden door; golden sparkles swirl around the door; the camera follows him slowly."
+      size:
+        description: "WIDTH HEIGHT FRAMES"
+        default: "768 448 97"
+jobs:
+  clip:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - name: Room on disk (the models are about 26 GB)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h / | tail -1; nproc; free -g | head -2; lscpu | grep "Model name"
+      - uses: astral-sh/setup-uv@v6
+      - name: Python packages (CPU torch)
+        run: |
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install --python .venv "diffusers>=0.34" "transformers<5" accelerate sentencepiece protobuf safetensors imageio imageio-ffmpeg
+      - name: One clip
+        env:
+          HF_HUB_DISABLE_TELEMETRY: "1"
+        run: .venv/bin/python story/ltx_clip.py clip.mp4 "${{ inputs.prompt }}" ${{ inputs.size }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: story-test-clip
+          path: clip.mp4
+          retention-days: 3
