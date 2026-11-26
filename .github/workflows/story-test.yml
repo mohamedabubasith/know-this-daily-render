@@ -24,7 +24,7 @@ jobs:
         run: |
           uv venv --python 3.12 .venv
           uv pip install --python .venv torch --index-url https://download.pytorch.org/whl/cpu
-          uv pip install --python .venv "diffusers>=0.34" "transformers<5" accelerate sentencepiece protobuf safetensors imageio imageio-ffmpeg
+          uv pip install --python .venv "diffusers>=0.34" "transformers>=4.50,<5" "tokenizers>=0.21" accelerate sentencepiece protobuf safetensors imageio imageio-ffmpeg
       - name: One clip
         env:
           HF_HUB_DISABLE_TELEMETRY: "1"

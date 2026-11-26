@@ -18,6 +18,7 @@ def log(msg):
 out, prompt = sys.argv[1], sys.argv[2]
 W, H, F = (int(x) for x in (sys.argv[3:6] if len(sys.argv) > 5 else (768, 448, 97)))
 torch.set_num_threads(os.cpu_count() or 4)
+DT = getattr(torch, os.environ.get("LTX_DTYPE", "bfloat16"))  # the runners' Xeons do bf16 in hardware (AMX)
 NEG = "worst quality, inconsistent motion, blurry, jittery, distorted"
 REPO = "Lightricks/LTX-Video-0.9.5"  # the diffusers layout: text reader, tokenizer, scheduler and configs
 SINGLE = "https://huggingface.co/Lightricks/LTX-Video/blob/main/ltxv-2b-0.9.8-distilled.safetensors"
@@ -31,7 +32,7 @@ def enc(text):
     t = tok(text, padding="max_length", max_length=128, truncation=True, return_tensors="pt")
     with torch.no_grad():
         e = te(t.input_ids, attention_mask=t.attention_mask)[0]
-    return e.float(), t.attention_mask
+    return e.to(DT), t.attention_mask
 pe, pm = enc(prompt)
 ne, nm = enc(NEG)
 del te; gc.collect()
@@ -40,9 +41,9 @@ log("prompt read")
 # 2. the video model (2B distilled) and its VAE, from the single file
 from diffusers import AutoencoderKLLTXVideo, LTXConditionPipeline, LTXVideoTransformer3DModel
 from diffusers.utils import export_to_video
-tr = LTXVideoTransformer3DModel.from_single_file(SINGLE, torch_dtype=torch.float32)
-vae = AutoencoderKLLTXVideo.from_single_file(SINGLE, torch_dtype=torch.float32)
-pipe = LTXConditionPipeline.from_pretrained(REPO, transformer=tr, vae=vae, text_encoder=None, tokenizer=None, torch_dtype=torch.float32)
+tr = LTXVideoTransformer3DModel.from_single_file(SINGLE, torch_dtype=DT)
+vae = AutoencoderKLLTXVideo.from_single_file(SINGLE, torch_dtype=DT)
+pipe = LTXConditionPipeline.from_pretrained(REPO, transformer=tr, vae=vae, text_encoder=None, tokenizer=None, torch_dtype=DT)
 log("video model loaded")
 
 steps_t = []
