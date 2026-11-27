@@ -136,6 +136,7 @@ def meta_of(film: dict) -> dict:
     meta["en_description"] = film.get("en_description") or film["description"]
     meta["en_hashtags"] = film.get("en_hashtags") or [h for h in film["hashtags"] if "tamil" not in h.lower()]
     meta["tag_source"] = film.get("tag_source", "")
+    meta["sound_note"] = p.sound_note(film)  # what an edit set for the sound, shown to the owner with the video
     meta["for_kids"] = bool(film.get("for_kids"))  # sets YouTube's "Made for Kids" on upload
     meta["category"] = film.get("category") or ("kids" if meta["for_kids"] else "education")
     meta["category_id"] = p.YT_CATEGORY.get(meta["category"], "27")

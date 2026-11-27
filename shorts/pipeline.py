@@ -53,6 +53,26 @@ EXPLAINER_HOLD = 1.2  # seconds an explainer rests on each finished drawing, voi
 LEAD, GAP, END_HOLD, END_CARD = 0.3, 0.55, 0.6, 2.7  # GAP: a breath between shots, like an edited voice-over
 # Seconds each transition shows the incoming shot before the cut point.
 PRE = {"fade": 0.6, "whip": 0.3, "zoom": 0.35, "iris": 0.45}
+# Sound settings an edit can change (film["sound"]): voice_start = seconds before the first spoken word,
+# gap = seconds of quiet between two lines, music = on / soft / off. Defaults per format: (voice_start, gap).
+SOUND_DEFAULTS = {"explainer": (LEAD, EXPLAINER_HOLD + 0.45), "lesson": (0.5, 0.35)}
+MUSIC_LEVEL = {"on": 1.0, "soft": 0.4, "off": 0.0}
+
+
+def sound_of(film: dict) -> dict:
+    """The film's sound settings: what an edit set, over the defaults of its format, kept inside sane limits."""
+    lead, gap = SOUND_DEFAULTS.get(film.get("format"), (LEAD, GAP))
+    s = film.get("sound") or {}
+    music = s.get("music") if s.get("music") in MUSIC_LEVEL else "on"
+    return {"voice_start": round(min(max(float(s.get("voice_start", lead)), 0.0), 8.0), 2),
+            "gap": round(min(max(float(s.get("gap", gap)), 0.15), 4.0), 2), "music": music}
+
+
+def sound_note(film: dict) -> str:
+    """The sound settings an edit set, in plain words for the owner ('' when none)."""
+    s, cur = film.get("sound") or {}, sound_of(film)
+    say = {"voice_start": "voice starts at {:g} s", "gap": "{:g} s between lines", "music": "music {}"}
+    return ", ".join(text.format(cur[k]) for k, text in say.items() if k in s)
 
 
 class StepError(RuntimeError):
@@ -466,8 +486,11 @@ def _text_rule(subtitles: str) -> str:
             "script, short and simple; this replaces the 'English' wording of those fields.\n" if subtitles == "ta" else "")
 
 
-EDIT_INTENT_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["format", "subtitles"],
-                      "properties": {"format": {"enum": FORMATS}, "subtitles": {"enum": ["ta", "en"]}}}
+EDIT_INTENT_SCHEMA = {"type": "object", "additionalProperties": False,
+                      "required": ["format", "subtitles", "voice_start", "gap", "music"],
+                      "properties": {"format": {"enum": FORMATS}, "subtitles": {"enum": ["ta", "en"]},
+                                     "voice_start": {"type": "number"}, "gap": {"type": "number"},
+                                     "music": {"enum": list(MUSIC_LEVEL)}}}
 EDIT_INTENT = """A video exists in one of three formats:
 - "explainer": drawn, illustrated motion graphics (cartoon-like drawn people and objects), no photos.
 - "facts": AI-generated pictures (realistic images/photos) with camera moves and a few animated graphics and text.
@@ -477,18 +500,31 @@ The owner watched it and wrote a change request. Return the format and on-screen
 have AFTER the change. Keep the current value unless the owner asks for something that needs the other: asking for
 images, pictures, photos or realistic visuals instead of drawings or characters means "facts" (or "story" for a
 kids story); asking for drawn, cartoon or fully animated instead of pictures means "explainer"; asking for Tamil
-or English text switches the language. Animated text over pictures is still "facts"."""
+or English text switches the language. Animated text over pictures is still "facts".
+It also has three sound settings: voice_start (seconds of picture and music before the first spoken word; the
+on-screen text of a line appears with its voice), gap (seconds of quiet between two spoken lines) and music
+("on", "soft" = quieter, "off" = none). Return them as they should be AFTER the change: keep the current value
+unless the owner asks about when the voice or text starts, the pauses between lines, or the background music.
+"Start the voice 2 or 3 seconds after the video starts" means voice_start 2.5."""
 
 
-def edit_intent(film: dict, change: str) -> tuple[str, str]:
-    """Which format and on-screen language the owner's re-edit asks for (their words, read by the model)."""
+def edit_intent(film: dict, change: str) -> tuple[str, str, dict]:
+    """Which format, on-screen language and sound settings the owner's re-edit asks for (their words, read by the model)."""
     cur = (film.get("format", "facts"), film.get("subtitles", "en"))
+    old, now = film.get("sound") or {}, sound_of(film)
     try:
         d, _ = claude_json(EDIT_INTENT, f"Current format: {cur[0]}. Current on-screen text: {cur[1]}. For kids: {bool(film.get('for_kids'))}.\n"
+                           f"Current sound settings: voice_start {now['voice_start']}, gap {now['gap']}, music {now['music']}.\n"
                            f"Change request:\n\"\"\"\n{change}\n\"\"\"", EDIT_INTENT_SCHEMA, "edit-intent", "haiku", think=False)
-        return d["format"], d["subtitles"]
-    except (StepError, KeyError):
-        return cur
+        want = sound_of({"format": film.get("format"), "sound": d})
+        # keep only what an edit set, so a film that changes format still gets the new format's own defaults
+        return d["format"], d["subtitles"], {k: want[k] for k in now if k in old or want[k] != now[k]}
+    except (StepError, KeyError, TypeError, ValueError):
+        return (*cur, old)
+
+
+SOUND_RULE = ("\nWhen the voice starts, the pauses between lines and the background music are set separately: never change, "
+              "add or remove a line for a request about those.")
 
 
 def revise_film(film: dict, change: str) -> tuple[dict, dict]:
@@ -500,7 +536,7 @@ def revise_film(film: dict, change: str) -> tuple[dict, dict]:
         prompt = (f"Current lesson:\n{json.dumps(view, ensure_ascii=False, indent=1)}\n\nThe owner watched the video and asks for "
                   f"this change:\n{change}\n\nReturn the full revised lesson. Keep every line the change does not touch exactly as "
                   "it is, word for word, so its voice can be reused. If the change is only about how it looks or moves, return "
-                  "every line unchanged: the motion designer gets the owner's words too.")
+                  "every line unchanged: the motion designer gets the owner's words too." + SOUND_RULE)
         film2, usage = claude_json(_lesson_prompt(film.get("lang", "ta")), prompt, LESSON_SCHEMA, "film-edit")
         film2["lang"] = film.get("lang", "ta")
         film2 = clean_film(_lesson_shots(film2))
@@ -508,8 +544,9 @@ def revise_film(film: dict, change: str) -> tuple[dict, dict]:
             if k in film:
                 film2[k] = film[k]
         film2["author_change"] = change
+        film2["sound"] = edit_intent(film, change)[2]
         return trend_tags(film2), usage
-    fmt, subs = edit_intent(film, change)
+    fmt, subs, sound = edit_intent(film, change)
     switched = fmt != film.get("format", "facts")
     lines = [{k: sh.get(k, "") for k in ("ta", "en", "mood")} for sh in film["shots"]]
     prompt = (f"Current shot list:\n{json.dumps(lines if switched else film, ensure_ascii=False, indent=1)}\n\n"
@@ -517,7 +554,7 @@ def revise_film(film: dict, change: str) -> tuple[dict, dict]:
               + ("The film is being remade in this format, so write every field the schema asks for; keep the narration lines "
                  "(ta, en) unless the change asks to change them." if switched else
                  "Return the full revised shot list. Keep every shot that the change does not touch exactly as it is, "
-                 "word for word, so its picture and voice can be reused."))
+                 "word for word, so its picture and voice can be reused.") + SOUND_RULE)
     if fmt == "explainer":
         film2, usage = claude_json(_prompt("explainer.md", film.get("lang", "ta")), prompt + (
             "\nIf the change is only about how the film looks or moves (drawings, colours, animation, pacing of the "
@@ -535,6 +572,7 @@ def revise_film(film: dict, change: str) -> tuple[dict, dict]:
         if k in film:
             film2[k] = film[k]
     film2["subtitles"] = subs
+    film2["sound"] = sound
     if film2.get("brief"):
         film2["brief"]["subtitles"] = film2.get("subtitles", "en")
     return trend_tags(film2), usage
@@ -1119,8 +1157,10 @@ def timeline(film: dict, lengths: list[float]) -> dict:
     """Where every shot, cut, line and subtitle sits in time."""
     # After a line: `hold` seconds on the finished picture, the cut, then `pre` seconds before the next line starts.
     # An explainer holds longer, so the viewer can take in the finished drawing before the voice moves on.
-    hold, pre = (EXPLAINER_HOLD, 0.45) if film.get("format") == "explainer" else (GAP / 2, GAP / 2)
-    shots, subs, t = [], [], LEAD
+    snd = sound_of(film)
+    pre = min(0.45, snd["gap"] / 2)
+    hold = snd["gap"] - pre
+    shots, subs, t = [], [], snd["voice_start"]
     for i, (s, d) in enumerate(zip(film["shots"], lengths)):
         v0, v1 = t, t + d
         start = 0.0 if i == 0 else round(v0 - pre, 3)
@@ -1188,11 +1228,14 @@ def mix_audio(film: dict, plan_t: dict, work: Path, out: Path) -> float:
          "-map", "[out]", "-ar", "44100", "-ac", "2", str(voice)], "voice track")
 
     # Background music, composed for this film; it ducks under the voice. Without it the film still renders.
+    level = MUSIC_LEVEL[sound_of(film)["music"]]
     try:
+        if not level:
+            raise ValueError("turned off for this film")
         from . import music
         bed = music.make(music.preset_for(film), total, work / "music.wav", seed=sum(map(ord, film.get("title", ""))))
         run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(voice), "-i", str(bed), "-filter_complex",
-             "[0:a]asplit=2[v][key];[1:a][key]sidechaincompress=threshold=0.02:ratio=8:attack=20:release=450[bed];"
+             f"[0:a]asplit=2[v][key];[1:a]volume={level}[m];[m][key]sidechaincompress=threshold=0.02:ratio=8:attack=20:release=450[bed];"
              "[v][bed]amix=inputs=2:normalize=0:duration=first,loudnorm=I=-15:TP=-1.5:LRA=11[out]",
              "-map", "[out]", "-c:a", "libmp3lame", "-b:a", "192k", str(out)], "music mix")
     except Exception as e:  # music is a nice-to-have: never lose a film over it

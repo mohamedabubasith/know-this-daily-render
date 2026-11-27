@@ -99,15 +99,16 @@ def join_voice() -> None:
                "-ac", "1", "-b:a", "96k", str(f)], "voice line")
 
 
-LEAD, GAP_LINE, GAP_SCENE, TAIL = 0.5, 0.35, 0.9, 2.0  # lesson timing: seconds of quiet
+SCENE_GAP, TAIL = 0.55, 2.0  # lesson timing: extra quiet where the scene changes, and after the last line
 
 
 def lesson_times(lengths: list[float]) -> tuple[list[float], list[float], float]:
     """Each line's voice start and end: a short breath between lines, a longer one where the scene changes."""
-    starts, ends, t = [], [], LEAD
+    snd = p.sound_of(film)  # the voice start and the quiet between lines: the owner's edit, or the lesson defaults
+    starts, ends, t = [], [], snd["voice_start"]
     for i, (s, d) in enumerate(zip(film["shots"], lengths)):
         if i:
-            t += GAP_SCENE if s["scene"] != film["shots"][i - 1]["scene"] else GAP_LINE
+            t += snd["gap"] + (SCENE_GAP if s["scene"] != film["shots"][i - 1]["scene"] else 0)
         starts.append(round(t, 3))
         t += d
         ends.append(round(t, 3))
