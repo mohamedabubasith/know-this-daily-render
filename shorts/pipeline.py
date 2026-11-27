@@ -1282,15 +1282,18 @@ def assemble(film: dict, plan_t: dict, lengths: list[float], work: Path, project
     out = assets / "voice.mp3"
     voice_len = mix_audio(film, plan_t, work, out)
 
-    shots_html = "\n".join(
-        f'          <div id="shot-{i}" class="shot clip" data-start="{s["clipStart"]}" '
-        f'data-duration="{round(s["clipEnd"] - s["clipStart"], 3)}" data-track-index="0" style="z-index:{i + 1}">'
-        + (f'<div class="fx"><div class="cam"><div id="anim-{i}"></div></div></div></div>' if s["kind"] == "anim"
-           else f'<div class="fx"><div class="cam"><div id="scene-{i}"></div></div></div></div>' if s["kind"] == "scene"
-           else f'<div class="fx"><div class="cam"><img src="assets/shot-{i}.jpg" alt="" /></div></div></div>')
-        for i, s in enumerate(plan_t["shots"]))
+    def shot(i: int, s: dict) -> str:
+        inner = (f'<div id="anim-{i}"></div>' if s["kind"] == "anim" else f'<div id="scene-{i}"></div>' if s["kind"] == "scene"
+                 else f'<img src="assets/shot-{i}.jpg" alt="" />')
+        return (f'          <div id="shot-{i}" class="shot clip" data-start="{s["clipStart"]}" '
+                f'data-duration="{round(s["clipEnd"] - s["clipStart"], 3)}" data-track-index="0" style="z-index:{i + 1}">'
+                f'<div class="fx"><div class="cam">{inner}</div></div></div>')
+
+    # Pictures play inside the framed card; animated graphics take the whole page (index.html: #shots and #gfx).
+    shots = list(enumerate(plan_t["shots"]))
     html = (TEMPLATE / "index.html").read_text()
-    html = (html.replace("__SHOTS__", shots_html)
+    html = (html.replace("__SHOTS__", "\n".join(shot(i, s) for i, s in shots if s["kind"] not in ("anim", "scene")))
+                .replace("__GFX__", "\n".join(shot(i, s) for i, s in shots if s["kind"] in ("anim", "scene")))
                 .replace("__DURATION__", str(plan_t["duration"]))
                 .replace("__VOICE_DURATION__", f"{voice_len:.3f}"))
     (project / "index.html").write_text(html)
