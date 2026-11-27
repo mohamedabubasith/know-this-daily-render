@@ -88,6 +88,7 @@ should_stop = lambda: False  # noqa: E731 - the API swaps in a check for the run
 
 # ---------------------------------------------------------------- Claude
 
+LOOKS = ["editorial", "punch", "blueprint"]  # how a picture Short is dressed (template/index.html); the first is the default
 FORMATS = ["explainer", "facts", "story"]  # fully animated / pictures + some animation / kids storybook
 
 CATEGORIES = ["education", "entertainment", "kids", "inspiration"]
@@ -407,6 +408,7 @@ def write_film(plan: dict, previous: list[dict] | None = None) -> tuple[dict, di
         film, usage = claude_json(_prompt("film.md", plan.get("lang", "ta")), prompt, FILM_SCHEMA, "film")
         film["format"] = plan.get("format") or ("story" if film.get("for_kids") else "facts")
         film["lang"] = plan.get("lang", "ta")  # "en": English narration (Kokoro), English captions and words on screen
+        film["look"] = plan.get("look") if plan.get("look") in LOOKS else LOOKS[0]
         film = clean_film(film)
     for k in ("category", "series", "part", "subtitles"):
         film[k] = plan.get(k, {"category": "education", "series": "", "part": 1, "subtitles": "en"}[k])
@@ -491,8 +493,8 @@ def _text_rule(subtitles: str) -> str:
 
 
 EDIT_INTENT_SCHEMA = {"type": "object", "additionalProperties": False,
-                      "required": ["format", "subtitles", "lang", "voice_start", "gap", "music"],
-                      "properties": {"format": {"enum": FORMATS}, "subtitles": {"enum": ["ta", "en"]}, "lang": {"enum": ["ta", "en"]},
+                      "required": ["format", "subtitles", "lang", "look", "voice_start", "gap", "music"],
+                      "properties": {"format": {"enum": FORMATS}, "subtitles": {"enum": ["ta", "en"]}, "lang": {"enum": ["ta", "en"]}, "look": {"enum": LOOKS},
                                      "voice_start": {"type": "number"}, "gap": {"type": "number"},
                                      "music": {"enum": list(MUSIC_LEVEL)}}}
 EDIT_INTENT = """A video exists in one of three formats:
@@ -508,6 +510,10 @@ or English text switches the language. Animated text over pictures is still "fac
 Its voice (the narration) is spoken in "ta" (Tamil) or "en" (English): return it as lang. Keep the current value unless
 the owner asks for the voice, narration or audio in the other language ("english voice", "speak in Tamil"). The text
 language and the voice language are separate: change only the one the owner names.
+Its look (how a picture video is dressed) is one of: "editorial" (cream paper page, the picture in a framed card, serif
+titles; also called paper, clean, magazine, style B), "punch" (the picture fills the screen, giant bold titles, big
+yellow captions; also called bold, style A) or "blueprint" (dark technical grid, labels and wired diagrams; also called
+tech, style C). Keep the current look unless the owner asks for another style, theme or look.
 It also has three sound settings: voice_start (seconds of picture and music before the first spoken word; the
 on-screen text of a line appears with its voice), gap (seconds of quiet between two spoken lines) and music
 ("on", "soft" = quieter, "off" = none). Return them as they should be AFTER the change: keep the current value
@@ -515,20 +521,24 @@ unless the owner asks about when the voice or text starts, the pauses between li
 "Start the voice 2 or 3 seconds after the video starts" means voice_start 2.5."""
 
 
-def edit_intent(film: dict, change: str) -> tuple[str, str, dict, str]:
+def look_of(film: dict) -> str:
+    return film.get("look") if film.get("look") in LOOKS else LOOKS[0]
+
+
+def edit_intent(film: dict, change: str) -> tuple[str, str, dict, str, str]:
     """Which format, on-screen language, sound settings and voice language the owner's re-edit asks for (their words, read by the model)."""
     cur = (film.get("format", "facts"), film.get("subtitles", "en"))
     lang = film.get("lang") or "ta"
     old, now = film.get("sound") or {}, sound_of(film)
     try:
-        d, _ = claude_json(EDIT_INTENT, f"Current format: {cur[0]}. Current on-screen text: {cur[1]}. Current voice: {lang}. For kids: {bool(film.get('for_kids'))}.\n"
+        d, _ = claude_json(EDIT_INTENT, f"Current format: {cur[0]}. Current on-screen text: {cur[1]}. Current voice: {lang}. Current look: {look_of(film)}. For kids: {bool(film.get('for_kids'))}.\n"
                            f"Current sound settings: voice_start {now['voice_start']}, gap {now['gap']}, music {now['music']}.\n"
                            f"Change request:\n\"\"\"\n{change}\n\"\"\"", EDIT_INTENT_SCHEMA, "edit-intent", "haiku", think=False)
         want = sound_of({"format": film.get("format"), "sound": d})
         # keep only what an edit set, so a film that changes format still gets the new format's own defaults
-        return d["format"], d["subtitles"], {k: want[k] for k in now if k in old or want[k] != now[k]}, d["lang"]
+        return d["format"], d["subtitles"], {k: want[k] for k in now if k in old or want[k] != now[k]}, d["lang"], d["look"]
     except (StepError, KeyError, TypeError, ValueError):
-        return (*cur, old, lang)
+        return (*cur, old, lang, look_of(film))
 
 
 def _lang_rule(old: str, new: str) -> str:
@@ -552,7 +562,7 @@ def revise_film(film: dict, change: str) -> tuple[dict, dict]:
                   f"this change:\n{change}\n\nReturn the full revised lesson. Keep every line the change does not touch exactly as "
                   "it is, word for word, so its voice can be reused. If the change is only about how it looks or moves, return "
                   "every line unchanged: the motion designer gets the owner's words too." + SOUND_RULE)
-        _, _, sound, lang = edit_intent(film, change)
+        _, _, sound, lang, _ = edit_intent(film, change)
         film2, usage = claude_json(_lesson_prompt(lang), prompt + _lang_rule(film.get("lang") or "ta", lang), LESSON_SCHEMA, "film-edit")
         film2["lang"] = lang
         film2 = clean_film(_lesson_shots(film2))
@@ -564,7 +574,7 @@ def revise_film(film: dict, change: str) -> tuple[dict, dict]:
         if film2.get("brief"):
             film2["brief"]["lang"] = lang
         return trend_tags(film2), usage
-    fmt, subs, sound, lang = edit_intent(film, change)
+    fmt, subs, sound, lang, look = edit_intent(film, change)
     if lang == "en":
         subs = "en"  # an English video has English words on screen
     relang = _lang_rule(film.get("lang") or "ta", lang)
@@ -594,6 +604,7 @@ def revise_film(film: dict, change: str) -> tuple[dict, dict]:
             film2[k] = film[k]
     film2["subtitles"] = subs
     film2["sound"] = sound
+    film2["look"] = look
     if film2.get("brief"):
         film2["brief"]["subtitles"] = film2.get("subtitles", "en")
         film2["brief"]["lang"] = lang
@@ -1193,7 +1204,8 @@ def timeline(film: dict, lengths: list[float]) -> dict:
         shots.append({**{k: s[k] for k in ("kind", "anim", "move", "framing", "transition", "mood", "overlay")},
                       "scene": s.get("scene"), "en": s["en"],
                       "start": start, "voiceStart": round(v0, 3), "voiceEnd": round(v1, 3)})
-        chunks = split_words(s["ta"], 4) if film.get("subtitles") == "ta" else split_words(s["en"])
+        big = film.get("look") == "punch"  # its captions are huge: fewer words at a time
+        chunks = split_words(s["ta"], 3 if big else 4) if film.get("subtitles") == "ta" else split_words(s["en"], 3 if big else 6)
         total = sum(len(c) for c in chunks)
         c0 = v0
         for j, c in enumerate(chunks):
@@ -1213,6 +1225,7 @@ def timeline(film: dict, lengths: list[float]) -> dict:
         c["end"] = round(min(max(c["end"] + 0.25, c["end"]), nxt - 0.02), 3)
     return {"duration": duration, "endStart": end_start, "hook": "" if film.get("format") == "explainer" else film["hook"],  # an explainer draws its own hook in shot 1
             "seed": 7, "accent": ACCENTS[theme_for(film)], "theme": theme_for(film), "format": film.get("format", ""),
+            "look": film.get("look") if film.get("look") in LOOKS else LOOKS[0],
             "shots": shots, "subs": subs}
 
 

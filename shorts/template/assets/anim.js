@@ -29,9 +29,15 @@
   const clip = (s, n) => (s || "").length > n ? s.slice(0, n - 1) + "…" : s || "";
 
   // The paper look: ink on a cream page, one accent colour per film (index.html picks it from the topic).
-  const T = { ink: "#1c1a17", card: "#fffaf0", paper: "#f3ecdd", soft: "rgba(28, 26, 23, 0.16)", mute: "rgba(28, 26, 23, 0.66)" };
-  const SERIF = { "font-family": "Fraunces, Noto Sans Tamil", "font-weight": 900 };
-  const SANS = { "font-family": "Inter, Noto Sans Tamil", "font-weight": 800 };
+  // One palette per look (index.html passes the look). ink: lines and text; card: fills, and text on ink or accent;
+  // paper: the page; soft, mute: faint lines and quiet text.
+  const PALETTES = {
+    editorial: { ink: "#1c1a17", card: "#fffaf0", paper: "#f3ecdd", soft: "rgba(28, 26, 23, 0.16)", mute: "rgba(28, 26, 23, 0.66)", display: "Fraunces", weight: 900, text: "Inter" },
+    punch: { ink: "#ffffff", card: "#171a2c", paper: "#07080f", soft: "rgba(255, 255, 255, 0.18)", mute: "rgba(255, 255, 255, 0.7)", display: "Anton", weight: 400, text: "Inter" },
+    blueprint: { ink: "#eaf6f4", card: "#0b222b", paper: "#06141a", soft: "rgba(234, 246, 244, 0.22)", mute: "rgba(234, 246, 244, 0.7)", display: "Space Grotesk", weight: 700, text: "JetBrains Mono" },
+  };
+  let T = PALETTES.editorial, LOOK = "editorial";
+  let SERIF = {}, SANS = {}; // the look's display and text type, set in buildAnim
 
   // ---------------------------------------------------------------- shared stage
   // Returns `draw` (the older scenes' drawing space, moved and enlarged to fill the page under the title) and
@@ -99,7 +105,7 @@
       sub.textContent = note;
       void badge;
       // Arrive faint, all together.
-      tl.fromTo(box, { opacity: 0, y: 30 }, { opacity: 0.45, y: 0, duration: 0.4, ease: "power3.out" }, shot.start + 0.25 + i * 0.07);
+      tl.fromTo(box, { opacity: 0, y: 30 }, { opacity: 0.45, y: 0, duration: 0.22, ease: "power3.out" }, shot.start + 0.05 + i * 0.04);
       // The light arrives on this step...
       tl.to(box, { opacity: 1, scale: 1.03, transformOrigin: "30% 50%", duration: 0.3, ease: "back.out(2)" }, lit(i));
       tl.to(face, { attr: { fill: accent }, duration: 0.25 }, lit(i));
@@ -112,6 +118,96 @@
       }
     });
   }
+
+  // ---------------------------------------------------------------- stepper: the pipeline of the punch look
+  // A numbered rail down the left, a card for every step. The rail fills as the voice moves down it.
+  function stepper(root, shot, tl, accent) {
+    const s = stage(root, shot, tl, accent);
+    const items = shot.anim.items.slice(0, 5);
+    const n = Math.max(1, items.length);
+    const top = 500, gap = 26, rowH = Math.min(180, (770 - (n - 1) * gap) / n), cx = 150, r = Math.min(72, rowH / 2 - 8);
+    const yOf = (i) => top + i * (rowH + gap) + rowH / 2;
+    const each = Math.max(0.5, (s.span - 0.7) / n), lit = (i) => s.t0 + i * each;
+    el("line", { x1: cx, y1: yOf(0), x2: cx, y2: yOf(n - 1), stroke: T.soft, "stroke-width": 14, "stroke-linecap": "round" }, s.page);
+    const fill = el("line", { x1: cx, y1: yOf(0), x2: cx, y2: yOf(0), stroke: accent, "stroke-width": 14, "stroke-linecap": "round" }, s.page);
+    items.forEach((it, i) => {
+      const y = yOf(i), g = el("g", {}, s.page);
+      const card = el("rect", { x: 260, y: y - rowH / 2, width: 760, height: rowH, rx: 34, fill: T.card, stroke: "#2b2f47", "stroke-width": 3 }, g);
+      const ring = el("circle", { cx, cy: y, r, fill: T.card, stroke: "#2b2f47", "stroke-width": 6 }, g);
+      const no = el("text", { x: cx, y: y + 4, "text-anchor": "middle", "dominant-baseline": "middle", fill: T.mute, "font-size": r * 1.15, ...SERIF }, g);
+      no.textContent = String(i + 1);
+      const note = clip(it.note, 32);
+      const label = el("text", { x: 304, y: note ? y - 4 : y + 22, fill: T.ink, "font-size": 60, ...SANS, "font-weight": 900 }, g);
+      label.textContent = clip(it.label, 20);
+      const sub = el("text", { x: 304, y: y + 48, fill: T.mute, "font-size": 36, ...SANS, "font-weight": 600 }, g);
+      sub.textContent = note;
+      tl.fromTo(g, { opacity: 0, x: 60 }, { opacity: 0.5, x: 0, duration: 0.22, ease: "power3.out" }, shot.start + 0.05 + i * 0.04);
+      tl.to(g, { opacity: 1, duration: 0.25 }, lit(i));
+      tl.to(card, { attr: { fill: accent, stroke: accent }, duration: 0.25 }, lit(i));
+      tl.to([label, sub], { attr: { fill: T.paper }, duration: 0.25 }, lit(i));
+      tl.to(ring, { attr: { stroke: accent }, duration: 0.25 }, lit(i));
+      tl.to(no, { attr: { fill: accent }, duration: 0.25 }, lit(i));
+      if (i) tl.to(fill, { attr: { y2: y }, duration: 0.4, ease: "power2.inOut" }, lit(i) - 0.3);
+      if (i < n - 1) { // done: the number stays lit, the card goes quiet
+        tl.to(card, { attr: { fill: T.card, stroke: "#2b2f47" }, duration: 0.3 }, lit(i + 1) - 0.05);
+        tl.to(label, { attr: { fill: T.ink }, duration: 0.3 }, lit(i + 1) - 0.05);
+        tl.to(sub, { attr: { fill: T.mute }, duration: 0.3 }, lit(i + 1) - 0.05);
+        tl.to(ring, { attr: { fill: accent }, duration: 0.3 }, lit(i + 1) - 0.05);
+        tl.to(no, { attr: { fill: T.paper }, duration: 0.3 }, lit(i + 1) - 0.05);
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------- wired: the pipeline of the blueprint look
+  // Boxes joined by right-angled wires; dots run along a wire once the voice has crossed it.
+  function wired(root, shot, tl, accent) {
+    const s = stage(root, shot, tl, accent);
+    const items = shot.anim.items.slice(0, 5);
+    const n = Math.max(1, items.length);
+    const bw = 540, bh = 150, top = 540, gapY = n === 1 ? 0 : Math.min(250, (1290 - top - bh) / (n - 1));
+    const pts = items.map((it, i) => ({ x: i % 2 ? 480 : 60, y: top + i * gapY }));
+    const each = Math.max(0.5, (s.span - 0.7) / n), lit = (i) => s.t0 + i * each;
+    pts.slice(1).forEach((p, i) => {
+      const q = pts[i], x0 = q.x + bw / 2, y0 = q.y + bh, x1 = p.x + bw / 2, y1 = p.y - 44, ym = (y0 + y1) / 2;
+      const d = `M ${x0} ${y0} V ${ym} H ${x1} V ${y1}`;
+      el("path", { d, fill: "none", stroke: T.soft, "stroke-width": 4, "stroke-dasharray": "6 14" }, s.page);
+      const wire = el("path", { d, fill: "none", stroke: accent, "stroke-width": 5, opacity: 0 }, s.page);
+      const len = wire.getTotalLength();
+      wire.style.strokeDasharray = `${len}`;
+      const at = lit(i + 1) - 0.4;
+      tl.set(wire, { opacity: 1 }, at);
+      tl.fromTo(wire, { strokeDashoffset: len }, { strokeDashoffset: 0, duration: 0.45, ease: "power2.inOut" }, at);
+      for (let k = 0; k < 3; k++) {
+        const dot = el("circle", { r: 9, fill: accent, opacity: 0 }, s.page);
+        const proxy = { u: 0 }, cyc = 1.5, start = at + 0.45 + (k * cyc) / 3;
+        tl.set(dot, { opacity: 1 }, start);
+        tl.fromTo(proxy, { u: 0 }, { u: 1, duration: cyc, ease: "none", repeat: reps(s.t1 - start, cyc),
+          onUpdate: () => { const pt = wire.getPointAtLength(proxy.u * len); dot.setAttribute("cx", pt.x); dot.setAttribute("cy", pt.y); } }, start);
+      }
+    });
+    pts.forEach((p, i) => {
+      const g = el("g", { transform: `translate(${p.x} ${p.y})` }, s.page);
+      const box = el("g", {}, g);
+      const step = el("text", { x: 0, y: -14, fill: T.mute, "font-size": 26, "letter-spacing": "0.1em", ...SANS, "font-weight": 700 }, box);
+      step.textContent = `STEP ${String(i + 1).padStart(2, "0")}`;
+      const face = el("rect", { x: 0, y: 0, width: bw, height: bh, rx: 10, fill: T.paper, stroke: T.soft, "stroke-width": 3 }, box);
+      const note = clip(it(items, i).note, 26);
+      const label = el("text", { x: 30, y: note ? 66 : 90, fill: T.mute, "font-size": 50, ...SERIF }, box);
+      label.textContent = clip(it(items, i).label, 18);
+      const sub = el("text", { x: 30, y: 112, fill: T.mute, "font-size": 28, ...SANS, "font-weight": 500 }, box);
+      sub.textContent = note;
+      tl.fromTo(box, { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.22, ease: "power3.out" }, shot.start + 0.05 + i * 0.04);
+      tl.to(face, { attr: { fill: accent, stroke: accent }, duration: 0.25 }, lit(i));
+      tl.to([label, sub], { attr: { fill: T.paper }, duration: 0.25 }, lit(i));
+      tl.to(step, { attr: { fill: accent }, duration: 0.25 }, lit(i));
+      if (i < n - 1) { // done: an outlined box in the accent colour
+        tl.to(face, { attr: { fill: T.paper }, duration: 0.3 }, lit(i + 1) - 0.05);
+        tl.to(label, { attr: { fill: T.ink }, duration: 0.3 }, lit(i + 1) - 0.05);
+        tl.to(sub, { attr: { fill: T.mute }, duration: 0.3 }, lit(i + 1) - 0.05);
+      }
+    });
+  }
+  const it = (items, i) => items[i] || { label: "", note: "" };
 
   // ---------------------------------------------------------------- chart: bars that grow and count
   function chart(root, shot, tl, accent) {
@@ -240,6 +336,60 @@
       img.src = shot.pic;
       Object.assign(img.style, { left: "672px", top: `${ny - 10}px` });
       tl.fromTo(img, { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.5, ease: "back.out(1.6)" }, s.t0 + 0.8);
+    }
+  }
+
+  // ---------------------------------------------------------------- stat of the punch look: one giant number, a stamp
+  function statPunch(root, shot, tl, accent) {
+    const s = stage(root, shot, tl, accent);
+    const item = shot.anim.items[0] || { label: "", value: 0 };
+    const v = Number(item.value) || 0, unit = (shot.anim.unit || "").trim(), pct = unit === "%";
+    const digits = fmtLike(v, v).length, size = digits > 7 ? 230 : digits > 5 ? 320 : 420;
+    const y = 880;
+    const num = el("text", { x: W / 2, y, "text-anchor": "middle", fill: accent, "font-size": size, ...SERIF }, s.page);
+    const u = el("text", { x: W / 2, y: y + 150, "text-anchor": "middle", fill: T.ink, "font-size": 140, ...SERIF }, s.page);
+    u.textContent = pct ? "" : clip(unit, 14).toUpperCase();
+    const proxy = { p: 0 };
+    tl.fromTo(num, { scale: 0.7, opacity: 0, transformOrigin: `${W / 2}px ${y - 120}px` }, { scale: 1, opacity: 1, duration: 0.4, ease: "back.out(1.8)" }, s.t0 - 0.1);
+    tl.fromTo(proxy, { p: 0 }, { p: 1, duration: 1.5, ease: "power2.out", onUpdate: () => { num.textContent = fmtLike(v * proxy.p, v) + (pct ? "%" : ""); } }, s.t0);
+    tl.fromTo(u, { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.35 }, s.t0 + 0.5);
+    if (item.label) { // slammed on like a rubber stamp
+      const stamp = html("div", "anim-stamp", clip(item.label, 44), root);
+      stamp.style.top = `${y + 190}px`;
+      tl.fromTo(stamp, { opacity: 0, scale: 2.2 }, { opacity: 1, scale: 1, duration: 0.3, ease: "power4.in" }, s.t0 + 1.3);
+    }
+  }
+
+  // ---------------------------------------------------------------- stat of the blueprint look: a dial and a data row
+  function statDial(root, shot, tl, accent) {
+    const s = stage(root, shot, tl, accent);
+    const item = shot.anim.items[0] || { label: "", value: 0 };
+    const v = Number(item.value) || 0, unit = (shot.anim.unit || "").trim(), pct = unit === "%";
+    const cx = W / 2, cy = 800, R = 330, N = 60;
+    const stop = pct ? Math.min(1, Math.max(0.02, v / 100)) : 0.8;
+    const ticks = [];
+    for (let k = 0; k < N; k++) {
+      const a = -Math.PI * 1.25 + (k / (N - 1)) * Math.PI * 1.5, long = k % 5 === 0;
+      const r0 = R - (long ? 46 : 26);
+      ticks.push(el("line", { x1: cx + Math.cos(a) * r0, y1: cy + Math.sin(a) * r0, x2: cx + Math.cos(a) * R, y2: cy + Math.sin(a) * R, stroke: T.soft, "stroke-width": long ? 7 : 4 }, s.page));
+    }
+    const digits = fmtLike(v, v).length;
+    const num = el("text", { x: cx, y: cy + 40, "text-anchor": "middle", fill: T.ink, "font-size": digits > 6 ? 130 : 180, "letter-spacing": "-0.04em", ...SERIF }, s.page);
+    const u = el("text", { x: cx, y: cy + 120, "text-anchor": "middle", fill: accent, "font-size": 42, "letter-spacing": "0.2em", ...SANS, "font-weight": 700 }, s.page);
+    u.textContent = pct ? "" : clip(unit, 18).toUpperCase();
+    const proxy = { p: 0 };
+    tl.fromTo(proxy, { p: 0 }, { p: 1, duration: 1.7, ease: "power2.out", onUpdate: () => {
+      num.textContent = fmtLike(v * proxy.p, v) + (pct ? "%" : "");
+      const on = Math.round(N * stop * proxy.p);
+      ticks.forEach((t, k) => t.setAttribute("stroke", k < on ? accent : T.soft));
+    } }, s.t0);
+    tl.fromTo(u, { opacity: 0 }, { opacity: 1, duration: 0.3 }, s.t0 + 0.4);
+    if (item.label) {
+      const row = html("div", "anim-row", null, root);
+      html("b", null, "NOTE", row);
+      html("span", null, clip(item.label, 60), row);
+      row.style.top = `${cy + R - 60}px`;
+      tl.fromTo(row, { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, s.t0 + 1.0);
     }
   }
 
@@ -397,5 +547,13 @@
   }
 
   const BUILDERS = { diagram, chart, timeline, scale, stat, orbit, wave, globe };
-  window.buildAnim = (root, shot, tl, accent) => (BUILDERS[shot.anim.type] || stat)(root, shot, tl, accent || "#c2491d");
+  const OWN = { punch: { diagram: stepper, stat: statPunch }, blueprint: { diagram: wired, stat: statDial } }; // scenes a look draws its own way
+  window.buildAnim = (root, shot, tl, accent, theme, look) => {
+    LOOK = PALETTES[look] ? look : "editorial";
+    T = PALETTES[LOOK];
+    SERIF = { "font-family": `${T.display}, Noto Sans Tamil`, "font-weight": T.weight };
+    SANS = { "font-family": `${T.text}, Noto Sans Tamil`, "font-weight": 800 };
+    const build = (OWN[LOOK] || {})[shot.anim.type] || BUILDERS[shot.anim.type] || (OWN[LOOK] || {}).stat || stat;
+    return build(root, shot, tl, accent || "#c2491d");
+  };
 })();

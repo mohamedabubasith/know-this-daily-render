@@ -34,7 +34,7 @@ calls = []
 def fake(system, prompt, schema, step, *a, **k):
     calls.append((step, system, prompt))
     if step == "edit-intent":
-        return {"format": "facts", "subtitles": "en", "lang": "en", "voice_start": 0.3, "gap": 0.55, "music": "on"}, {}
+        return {"format": "facts", "subtitles": "en", "lang": "en", "look": "blueprint", "voice_start": 0.3, "gap": 0.55, "music": "on"}, {}
     return {"hook": "Turbo magic", "title": "How a Turbo Works", "description": "d", "hashtags": [], "tags": [], "en_title": "",
             "en_description": "", "en_hashtags": [], "voice": "male", "style": "", "for_kids": False,
             "thumb": {"words": "Turbo *Magic*", "line": "", "shot": 0}, "shots": [dict(SHOT, image="i") for _ in range(7)]}, {}
@@ -43,5 +43,6 @@ def fake(system, prompt, schema, step, *a, **k):
 p.claude_json, p.trend_tags = fake, lambda f: f
 out, _ = p.revise_film({**film(format="facts", lang="ta", subtitles="en"), "brief": {}}, "Use image video and english voice")
 assert out["lang"] == "en" and out["sound"] == {} and "#tamil" not in out["hashtags"]
+assert out["look"] == "blueprint" and p.timeline({**out, "shots": out["shots"][:2]}, [2.0, 2.0])["look"] == "blueprint"  # an edit can change the style
 assert "ENGLISH VIDEO" in calls[1][1] and "changes from Tamil to English" in calls[1][2]  # the writer gets the English rules
 print("sound ok")

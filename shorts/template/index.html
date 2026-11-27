@@ -11,97 +11,169 @@
     <script src="assets/land.js"></script>
     <script src="assets/anim.js"></script>
     <style>
-      /* The "editorial" look: a paper page, the picture in a framed card, serif titles, a marker for the key word.
-         Top to bottom: header, the picture card, the title under it, the caption. Everything a viewer must read ends by
-         y=1570: YouTube Shorts lays its own channel name and buttons over what is below. */
+      /* Three looks share one engine; <html data-look> picks one (set from FILM.look by the script below).
+           editorial  a paper page: the picture in a framed card, serif titles, a marker under the key word
+           punch      the picture fills the screen: giant condensed titles, big centred captions
+           blueprint  the picture under a drawing grid: technical type, labels, wired diagrams
+         Everything a viewer must read ends by y=1570: YouTube Shorts lays its own channel name and buttons below that. */
       @font-face { font-family: "Noto Sans Tamil"; src: url("assets/fonts/NotoSansTamil.ttf"); font-weight: 100 900; }
       @font-face { font-family: "Fraunces"; src: url("assets/fonts/Fraunces.ttf"); font-weight: 100 900; }
-      :root {
-        --ink: #1c1a17;
-        --paper: #f3ecdd;
-        --card: #fffaf0;
-        --accent: #c2491d;
+      @font-face { font-family: "Anton"; src: url("assets/fonts/Anton.ttf"); }
+      @font-face { font-family: "Space Grotesk"; src: url("assets/fonts/SpaceGrotesk.ttf"); font-weight: 300 700; }
+      @font-face { font-family: "JetBrains Mono"; src: url("assets/fonts/JetBrainsMono.ttf"); font-weight: 100 800; }
+      :root { --ink: #1c1a17; --paper: #f3ecdd; --card: #fffaf0; --accent: #c2491d; --pw: 898px;
         --mark: color-mix(in srgb, var(--accent) 36%, transparent);
-        --font-display: "Fraunces", "Noto Sans Tamil", serif;
-        --font-text: "Inter", "Noto Sans Tamil", sans-serif;
-      }
+        --font-display: "Fraunces", "Noto Sans Tamil", serif; --font-text: "Inter", "Noto Sans Tamil", sans-serif; --font-mono: "JetBrains Mono", "Noto Sans Tamil", monospace; }
       * { margin: 0; padding: 0; box-sizing: border-box; }
       html, body { margin: 0; width: 1080px; height: 1920px; overflow: hidden; background: var(--paper); }
       #root { position: relative; width: 100%; height: 100%; font-family: var(--font-text); color: var(--ink); }
       #film, .layer, #gfx, #subs, #overlays { position: absolute; inset: 0; }
       #film { overflow: hidden; background: var(--paper); }
-      #dots-bg { z-index: 0; background: radial-gradient(rgba(28, 26, 23, 0.07) 1.3px, transparent 1.4px) 0 0 / 10px 10px; }
-      #frame { z-index: 1; } #gfx { z-index: 2; } #head, #hook, #overlays { z-index: 4; } #subs, #sub-rule { z-index: 5; }
+      #page-bg { z-index: 0; } #frame { z-index: 1; } #gfx { z-index: 2; } #head, #hook, #overlays { z-index: 4; } #subs, #sub-rule { z-index: 5; }
       #grain { z-index: 6; } #endcard { z-index: 10; }
-
-      /* The picture card. Its height moves: it makes room for a title under it, then grows back. */
-      #frame { position: absolute; left: 80px; top: 236px; width: 898px; height: 1110px; border-radius: 40px; overflow: hidden;
-        border: 4px solid var(--ink); box-shadow: 22px 22px 0 var(--accent); background: var(--ink); isolation: isolate; }
+      #frame { position: absolute; overflow: hidden; background: #0b0d12; isolation: isolate; }
       #shots { position: absolute; inset: 0; z-index: 0; isolation: isolate; }
-      #grade { z-index: 1; mix-blend-mode: soft-light; } #leak { z-index: 2; } #vignette { z-index: 3; } #flash { z-index: 4; opacity: 0; } #tags { z-index: 5; }
+      #grade { z-index: 1; mix-blend-mode: soft-light; } #leak { z-index: 2; } #vignette { z-index: 3; } #shade { z-index: 4; } #grid { z-index: 5; }
+      #flash { z-index: 6; opacity: 0; } #tags { z-index: 7; }
       .shot { position: absolute; inset: 0; overflow: hidden; }
       .fx, .cam { position: absolute; inset: 0; }
-      /* A 9:16 picture, centred on the card whatever the card's height is. */
-      #shots .cam img { position: absolute; left: 0; top: 50%; width: 898px; height: 1597px; margin-top: -798px; object-fit: cover; }
+      /* A 9:16 picture as wide as the frame, centred on it whatever its height is. */
+      #shots .cam img { position: absolute; left: 0; top: 50%; width: var(--pw); height: calc(var(--pw) * 16 / 9); margin-top: calc(var(--pw) * -8 / 9); object-fit: cover; }
       #leak { position: absolute; mix-blend-mode: screen; width: 1300px; height: 1300px; left: -200px; top: -220px;
         background: radial-gradient(closest-side at 50% 50%, rgba(255, 170, 80, 0.9), rgba(255, 90, 60, 0.35) 45%, rgba(255, 60, 60, 0) 75%); }
       #vignette { background: radial-gradient(ellipse 80% 70% at 50% 46%, rgba(0, 0, 0, 0) 60%, rgba(0, 0, 0, 0.38) 100%); }
-      #tags .ov-label { position: absolute; left: 30px; bottom: 30px; max-width: 800px; padding: 14px 26px; border-radius: 999px; background: var(--paper);
-        border: 3px solid var(--ink); font: 800 30px/1.1 var(--font-text); letter-spacing: 0.06em; text-transform: uppercase; opacity: 0; }
-
-      /* Animated graphics take the whole page; their paper travels with the transition. */
+      #shade, #grid, #brackets, #sub-rule { display: none; }
       #gfx .fx { background: var(--paper); }
       .anim-stage { position: absolute; inset: 0; overflow: hidden; }
       .anim-svg { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; overflow: visible; }
-      .anim-title { position: absolute; left: 80px; right: 80px; top: 232px; font: 900 100px/1.04 var(--font-display); letter-spacing: -0.025em; text-wrap: balance; }
-      .anim-title .hl { background: linear-gradient(transparent 80%, var(--accent) 80%, var(--accent) 93%, transparent 93%) no-repeat 0 0 / 0% 100%; }
+      .anim-title { position: absolute; left: 80px; right: 80px; top: 232px; text-wrap: balance; }
       .anim-note { position: absolute; left: 80px; width: 520px; font: 900 72px/1.06 var(--font-display); letter-spacing: -0.02em; }
       .anim-pic { position: absolute; width: 300px; height: 300px; border-radius: 50%; object-fit: cover; border: 4px solid var(--ink); box-shadow: 14px 14px 0 var(--accent); }
       .anim-pin-label { position: absolute; left: 0; right: 0; top: 1240px; margin: 0 auto; width: fit-content; max-width: 860px; padding: 16px 30px; border-radius: 999px;
-        background: var(--card); border: 4px solid var(--ink); box-shadow: 8px 8px 0 var(--ink); font: 800 40px/1.1 var(--font-text); text-align: center; }
-
-      /* Header: channel, what kind of film this is, and one dot for every shot. */
-      #head { position: absolute; left: 80px; right: 80px; top: 100px; }
-      #head .row { display: flex; justify-content: space-between; align-items: center; font: 800 28px/1 var(--font-text); letter-spacing: 0.16em; }
-      #head .row b { display: flex; align-items: center; gap: 14px; font-weight: 800; }
+        background: var(--card); border: 4px solid var(--ink); font: 800 40px/1.1 var(--font-text); text-align: center; }
+      .anim-stamp { position: absolute; right: 70px; max-width: 800px; padding: 14px 30px; border: 8px solid #ff5a3c; color: #ff5a3c; border-radius: 14px;
+        font: 400 70px/1.05 var(--font-display); text-transform: uppercase; transform: rotate(-6deg); }
+      .anim-row { position: absolute; left: 54px; width: 972px; display: flex; gap: 40px; padding: 30px 0; border-top: 2px solid var(--mark); border-bottom: 2px solid var(--mark);
+        font: 500 40px/1.25 var(--font-mono); }
+      .anim-row b { flex: none; color: var(--accent); font-weight: 700; letter-spacing: 0.08em; }
+      #head { position: absolute; }
+      #head .row { display: flex; justify-content: space-between; align-items: center; }
+      #head .row b { display: flex; align-items: center; gap: 14px; font-weight: inherit; }
       #head .row svg { width: 40px; height: 40px; border-radius: 10px; }
       #kicker { color: var(--accent); }
-      #head-rule { height: 3px; margin-top: 20px; background: var(--ink); transform-origin: 0 50%; }
-      #dots { display: flex; gap: 10px; margin-top: 16px; }
-      #dots i { width: 34px; height: 8px; border-radius: 4px; background: rgba(28, 26, 23, 0.18); position: relative; overflow: hidden; }
+      #head-rule { transform-origin: 0 50%; }
+      #dots { display: flex; }
+      #dots i { position: relative; overflow: hidden; }
       #dots i::after { content: ""; position: absolute; inset: 0; background: var(--accent); transform: scaleX(var(--p, 0)); transform-origin: 0 50%; }
-
-      /* The hook and the big on-screen words live in the title zone, under the card. */
-      #hook { position: absolute; left: 80px; right: 80px; top: 1128px; font: 900 116px/1 var(--font-display); letter-spacing: -0.025em; text-wrap: balance; }
-      #hook.long { font-size: 86px; }
-      #hook.ta, .ov.ta, .anim-title.ta { line-height: 1.22; letter-spacing: 0; }
+      #hook { position: absolute; }
       #hook .w { display: inline-block; opacity: 0; }
-      #hook .hl { background: linear-gradient(transparent 82%, var(--accent) 82%, var(--accent) 94%, transparent 94%) no-repeat 0 0 / 0% 100%; }
-      .ov { position: absolute; left: 80px; right: 80px; top: 1132px; opacity: 0; }
-      .ov-big { font: 900 116px/1 var(--font-display); letter-spacing: -0.025em; }
-      .ov-count .num { font: 900 150px/1 var(--font-display); letter-spacing: -0.03em; color: var(--accent); white-space: nowrap; }
-      .ov-count .sfx { font-size: 80px; margin-left: 10px; }
-      .ov-count .cap { margin-top: 10px; font: 800 40px/1.1 var(--font-text); letter-spacing: 0.06em; text-transform: uppercase; }
-
-      /* Captions: under the card, a few words at a time, the key word under a marker. */
-      #sub-rule { position: absolute; left: 80px; width: 920px; top: 1400px; height: 3px; background: var(--ink); transform-origin: 0 50%; }
-      .sub { position: absolute; left: 80px; width: 900px; top: 1426px; font: 700 60px/1.2 var(--font-text); opacity: 0; text-wrap: balance; }
-      .sub.ta { line-height: 1.4; font-size: 50px; }
-      .sub b { font-weight: 800; background: linear-gradient(transparent 56%, var(--mark) 56%) no-repeat 0 0 / 0% 100%; }
-
-      #grain { background: url("assets/grain.png") repeat; opacity: 0.06; mix-blend-mode: multiply; left: -256px; top: -256px; right: -256px; bottom: -256px; }
-
+      .ov, .ov-label, .sub { position: absolute; opacity: 0; }
+      .ov-count .num { white-space: nowrap; color: var(--accent); }
+      #grain { background: url("assets/grain.png") repeat; left: -256px; top: -256px; right: -256px; bottom: -256px; }
       #endcard { opacity: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 34px; background: var(--paper); padding-bottom: 220px; }
-      #endcard svg { width: 230px; height: 230px; border-radius: 52px; border: 4px solid var(--ink); box-shadow: 14px 14px 0 var(--accent); }
-      #end-name { font: 900 96px/1 var(--font-display); letter-spacing: -0.025em; }
+      #endcard svg { width: 230px; height: 230px; border-radius: 52px; }
       #end-line { font: 700 44px/1.3 var(--font-text); text-align: center; padding: 0 120px; }
-      #end-line b { background: linear-gradient(transparent 56%, var(--mark) 56%); font-weight: 800; }
+
+      /* ---------------------------------------------------------------- editorial */
+      [data-look="editorial"] #page-bg { background: radial-gradient(rgba(28, 26, 23, 0.07) 1.3px, transparent 1.4px) 0 0 / 10px 10px; }
+      /* The picture card. Its height moves: it makes room for a title under it, then grows back. */
+      [data-look="editorial"] #frame { left: 80px; top: 236px; width: 898px; height: 1110px; border-radius: 40px; border: 4px solid var(--ink); box-shadow: 22px 22px 0 var(--accent); }
+      [data-look="editorial"] .ov-label { left: 30px; bottom: 30px; max-width: 800px; padding: 14px 26px; border-radius: 999px; background: var(--paper);
+        border: 3px solid var(--ink); font: 800 30px/1.1 var(--font-text); letter-spacing: 0.06em; text-transform: uppercase; }
+      [data-look="editorial"] .anim-title { font: 900 100px/1.04 var(--font-display); letter-spacing: -0.025em; }
+      [data-look="editorial"] .anim-title .hl, [data-look="editorial"] #hook .hl { background: linear-gradient(transparent 80%, var(--accent) 80%, var(--accent) 93%, transparent 93%) no-repeat 0 0 / 0% 100%; }
+      [data-look="editorial"] .anim-pin-label { box-shadow: 8px 8px 0 var(--ink); }
+      [data-look="editorial"] #head { left: 80px; right: 80px; top: 100px; }
+      [data-look="editorial"] #head .row { font: 800 28px/1 var(--font-text); letter-spacing: 0.16em; }
+      [data-look="editorial"] #head-rule { height: 3px; margin-top: 20px; background: var(--ink); }
+      [data-look="editorial"] #dots { gap: 10px; margin-top: 16px; }
+      [data-look="editorial"] #dots i { width: 34px; height: 8px; border-radius: 4px; background: rgba(28, 26, 23, 0.18); }
+      [data-look="editorial"] #hook { left: 80px; right: 80px; top: 1128px; font: 900 116px/1 var(--font-display); letter-spacing: -0.025em; text-wrap: balance; }
+      [data-look="editorial"] #hook.long { font-size: 86px; }
+      [data-look="editorial"] .ov { left: 80px; right: 80px; top: 1132px; }
+      [data-look="editorial"] .ov-big { font: 900 116px/1 var(--font-display); letter-spacing: -0.025em; }
+      [data-look="editorial"] .ov-count .num { font: 900 150px/1 var(--font-display); letter-spacing: -0.03em; }
+      [data-look="editorial"] .ov-count .sfx { font-size: 80px; margin-left: 10px; }
+      [data-look="editorial"] .ov-count .cap { margin-top: 10px; font: 800 40px/1.1 var(--font-text); letter-spacing: 0.06em; text-transform: uppercase; }
+      [data-look="editorial"] #sub-rule { display: block; position: absolute; left: 80px; width: 920px; top: 1400px; height: 3px; background: var(--ink); transform-origin: 0 50%; }
+      [data-look="editorial"] .sub { left: 80px; width: 900px; top: 1426px; font: 700 60px/1.2 var(--font-text); text-wrap: balance; }
+      [data-look="editorial"] .sub.ta { line-height: 1.4; font-size: 50px; }
+      [data-look="editorial"] .sub b { font-weight: 800; background: linear-gradient(transparent 56%, var(--mark) 56%) no-repeat 0 0 / 0% 100%; }
+      [data-look="editorial"] #grain { opacity: 0.06; mix-blend-mode: multiply; }
+      [data-look="editorial"] #endcard svg { border: 4px solid var(--ink); box-shadow: 14px 14px 0 var(--accent); }
+      [data-look="editorial"] #end-name { font: 900 96px/1 var(--font-display); letter-spacing: -0.025em; }
+      [data-look="editorial"] #end-line b { background: linear-gradient(transparent 56%, var(--mark) 56%); font-weight: 800; }
+      #hook.ta, .ov.ta, .anim-title.ta { line-height: 1.22 !important; letter-spacing: 0 !important; }
+
+      /* ---------------------------------------------------------------- punch */
+      [data-look="punch"] { --ink: #ffffff; --paper: #07080f; --card: #171a2c; --pw: 1080px; --font-display: "Anton", "Noto Sans Tamil", sans-serif; }
+      [data-look="punch"] #frame, [data-look="blueprint"] #frame { left: 0; top: 0; width: 1080px; height: 1920px; }
+      [data-look="punch"] #shade { display: block; background: linear-gradient(180deg, rgba(7, 8, 15, 0.74) 0%, rgba(7, 8, 15, 0.05) 24%, rgba(7, 8, 15, 0.1) 45%, rgba(7, 8, 15, 0.9) 74%, #07080f 100%); }
+      [data-look="punch"] #gfx .fx { background: radial-gradient(120% 60% at 50% 22%, color-mix(in srgb, var(--accent) 20%, #07080f) 0%, #07080f 72%); }
+      [data-look="punch"] #head { left: 48px; right: 48px; top: 96px; display: flex; flex-direction: column; }
+      [data-look="punch"] #dots { order: -1; gap: 10px; margin-bottom: 26px; }
+      [data-look="punch"] #dots i { flex: 1; height: 10px; border-radius: 5px; background: rgba(255, 255, 255, 0.28); }
+      [data-look="punch"] #head .row { font: 800 30px/1 var(--font-text); letter-spacing: 0.16em; }
+      [data-look="punch"] #kicker, [data-look="punch"] #head-rule { display: none; }
+      [data-look="punch"] #hook { left: 60px; right: 60px; top: 640px; font: 400 200px/0.98 var(--font-display); text-transform: uppercase; letter-spacing: 0.005em; text-shadow: 0 6px 30px rgba(0, 0, 0, 0.6); }
+      [data-look="punch"] #hook.long { font-size: 150px; }
+      [data-look="punch"] #hook .hl { background: var(--accent); color: var(--paper); padding: 0 22px; text-shadow: none; transform: rotate(-2deg); }
+      [data-look="punch"] .ov { left: 50px; right: 50px; top: 660px; text-align: center; text-shadow: 0 8px 34px rgba(0, 0, 0, 0.7); }
+      [data-look="punch"] .ov-big { font: 400 210px/0.98 var(--font-display); text-transform: uppercase; }
+      [data-look="punch"] .ov-count .num { font: 400 250px/1 var(--font-display); }
+      [data-look="punch"] .ov-count .sfx { font-size: 120px; margin-left: 10px; }
+      [data-look="punch"] .ov-count .cap { margin-top: 6px; font: 400 96px/1 var(--font-display); text-transform: uppercase; }
+      [data-look="punch"] .ov-label { left: 48px; top: 216px; padding: 12px 22px; background: var(--accent); color: var(--paper); font: 400 44px/1 var(--font-display); text-transform: uppercase; letter-spacing: 0.03em; transform: rotate(-2deg); }
+      [data-look="punch"] .sub { left: 50px; width: 980px; top: 1350px; text-align: center; font: 900 92px/1.08 var(--font-text); letter-spacing: -0.01em; text-transform: uppercase;
+        -webkit-text-stroke: 14px #07080f; paint-order: stroke fill; text-wrap: balance; }
+      [data-look="punch"] .sub.ta { font-size: 76px; line-height: 1.3; }
+      [data-look="punch"] .sub b { color: var(--accent); font-weight: 900; }
+      [data-look="punch"] .anim-title { left: 60px; right: 60px; top: 220px; font: 400 124px/1 var(--font-display); text-transform: uppercase; }
+      [data-look="punch"] .anim-title .hl, [data-look="blueprint"] .anim-title .hl { color: var(--accent); }
+      [data-look="punch"] .anim-pin-label, [data-look="blueprint"] .anim-pin-label { border-color: var(--accent); top: 1200px; }
+      [data-look="punch"] #grain, [data-look="blueprint"] #grain { opacity: 0.07; mix-blend-mode: overlay; }
+      [data-look="punch"] #end-name { font: 400 110px/1 var(--font-display); text-transform: uppercase; }
+      [data-look="punch"] #end-line b, [data-look="blueprint"] #end-line b { color: var(--accent); }
+
+      /* ---------------------------------------------------------------- blueprint */
+      [data-look="blueprint"] { --ink: #eaf6f4; --paper: #06141a; --card: #0b222b; --pw: 1080px; --font-display: "Space Grotesk", "Noto Sans Tamil", sans-serif; }
+      [data-look="blueprint"] #shots .cam img { filter: saturate(0.75) brightness(0.78); }
+      [data-look="blueprint"] #shade { display: block; background: linear-gradient(180deg, rgba(6, 20, 26, 0.88) 0%, rgba(6, 20, 26, 0.2) 30%, rgba(6, 20, 26, 0.25) 55%, rgba(6, 20, 26, 0.95) 80%); }
+      [data-look="blueprint"] #grid, [data-look="blueprint"] #page-bg { display: block;
+        background: linear-gradient(var(--mark) 2px, transparent 2px) 0 0 / 90px 90px, linear-gradient(90deg, var(--mark) 2px, transparent 2px) 0 0 / 90px 90px; opacity: 0.3; }
+      [data-look="blueprint"] #gfx .fx { background: var(--paper) linear-gradient(color-mix(in srgb, var(--accent) 10%, transparent) 2px, transparent 2px) 0 0 / 90px 90px; }
+      [data-look="blueprint"] #brackets { display: block; position: absolute; left: 150px; top: 640px; width: 780px; height: 540px; z-index: 6; }
+      [data-look="blueprint"] #brackets i { position: absolute; width: 70px; height: 70px; border: 6px solid var(--accent); }
+      [data-look="blueprint"] #brackets i:nth-child(1) { left: 0; top: 0; border-right: 0; border-bottom: 0; } [data-look="blueprint"] #brackets i:nth-child(2) { right: 0; top: 0; border-left: 0; border-bottom: 0; }
+      [data-look="blueprint"] #brackets i:nth-child(3) { left: 0; bottom: 0; border-right: 0; border-top: 0; } [data-look="blueprint"] #brackets i:nth-child(4) { right: 0; bottom: 0; border-left: 0; border-top: 0; }
+      [data-look="blueprint"] #head { left: 54px; right: 54px; top: 96px; }
+      [data-look="blueprint"] #head .row { font: 700 28px/1 var(--font-mono); letter-spacing: 0.08em; color: var(--accent); }
+      [data-look="blueprint"] #head .row svg, [data-look="blueprint"] #head-rule { display: none; }
+      [data-look="blueprint"] #dots { margin-top: 22px; background: rgba(234, 246, 244, 0.16); }
+      [data-look="blueprint"] #dots i { flex: 1; height: 6px; }
+      [data-look="blueprint"] #hook { left: 54px; right: 54px; top: 220px; font: 700 138px/0.98 var(--font-display); letter-spacing: -0.03em; }
+      [data-look="blueprint"] #hook.long { font-size: 108px; }
+      [data-look="blueprint"] #hook .hl { color: var(--accent); }
+      [data-look="blueprint"] .ov { left: 54px; right: 54px; top: 230px; }
+      [data-look="blueprint"] .ov-big { font: 700 138px/0.98 var(--font-display); letter-spacing: -0.03em; color: var(--accent); }
+      [data-look="blueprint"] .ov-count .num { font: 700 190px/1 var(--font-display); letter-spacing: -0.04em; }
+      [data-look="blueprint"] .ov-count .sfx { font-size: 90px; margin-left: 10px; }
+      [data-look="blueprint"] .ov-count .cap { margin-top: 12px; font: 700 40px/1.1 var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; }
+      [data-look="blueprint"] .ov-label { left: 130px; top: 1200px; padding: 14px 18px 14px 44px; background: var(--paper); border: 2px solid var(--accent); color: var(--accent);
+        font: 700 30px/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; }
+      [data-look="blueprint"] .ov-label::before { content: ""; position: absolute; left: 12px; top: 50%; width: 18px; height: 18px; margin-top: -9px; border-radius: 50%; background: var(--accent); }
+      [data-look="blueprint"] .sub { left: 54px; width: 972px; top: 1330px; padding: 28px 34px; background: rgba(6, 20, 26, 0.84); border: 2px solid var(--mark); border-left: 12px solid var(--accent);
+        font: 700 58px/1.2 var(--font-display); }
+      [data-look="blueprint"] .sub.ta { font-size: 50px; line-height: 1.4; }
+      [data-look="blueprint"] .sub b { color: var(--accent); font-weight: 700; }
+      [data-look="blueprint"] .anim-title { left: 54px; right: 54px; top: 210px; font: 700 112px/1 var(--font-display); letter-spacing: -0.03em; }
+      [data-look="blueprint"] #end-name { font: 700 96px/1 var(--font-display); letter-spacing: -0.03em; }
     </style>
   </head>
   <body>
     <div id="root" data-composition-id="main" data-start="0" data-duration="__DURATION__" data-width="1080" data-height="1920" data-motion-blur="on">
       <div id="film" class="clip" data-start="0" data-duration="__DURATION__" data-track-index="0" data-track-kind="graphics" data-layout-allow-overflow data-layout-allow-overlap>
-        <div id="dots-bg" class="layer" data-layout-ignore></div>
+        <div id="page-bg" class="layer" data-layout-ignore></div>
         <div id="frame">
           <div id="shots">
 __SHOTS__
@@ -109,6 +181,9 @@ __SHOTS__
           <div id="grade" class="layer"></div>
           <div id="leak" data-layout-ignore></div>
           <div id="vignette" class="layer"></div>
+          <div id="shade" class="layer"></div>
+          <div id="grid" class="layer" data-layout-ignore></div>
+          <div id="brackets" data-layout-ignore><i></i><i></i><i></i><i></i></div>
           <div id="flash" class="layer"></div>
           <div id="tags" class="layer"></div>
         </div>
@@ -151,7 +226,11 @@ __GFX__
         heritage: ["#c2491d", "HISTORY"], space: ["#5b3fd1", "SPACE"], ocean: ["#0b7a86", "OCEAN"], nature: ["#3d7a2a", "NATURE"],
         tech: ["#0b6bd3", "TECH"], kids: ["#e0407a", "STORY"], night: ["#2743c4", "KNOW THIS"],
       };
-      const [ACCENT, KICKER] = LOOKS[F.theme] || LOOKS.night;
+      // The look: editorial keeps its own ink-on-paper accents; the dark looks use the film's bright accent.
+      const LOOK = ["editorial", "punch", "blueprint"].includes(F.look) ? F.look : "editorial";
+      document.documentElement.dataset.look = LOOK;
+      const [PAPER_ACCENT, KICKER] = LOOKS[F.theme] || LOOKS.night;
+      const ACCENT = LOOK === "editorial" ? PAPER_ACCENT : (F.accent || "#ffd21f");
       document.documentElement.style.setProperty("--accent", ACCENT);
       q("#kicker").textContent = KICKER;
 
@@ -236,7 +315,7 @@ __GFX__
         if (s.kind !== "anim") return;
         // The fact page shows a round crop of the nearest picture, so the number stays tied to the story.
         const near = F.shots.map((x, k) => k).filter((k) => F.shots[k].kind === "photo").sort((a, b) => Math.abs(a - i) - Math.abs(b - i))[0];
-        window.buildAnim(q(`#anim-${i}`), { ...s, pic: near == null ? "" : `assets/shot-${near}.jpg` }, tl, ACCENT, F.theme);
+        window.buildAnim(q(`#anim-${i}`), { ...s, pic: near == null ? "" : `assets/shot-${near}.jpg` }, tl, ACCENT, F.theme, LOOK);
       });
       gsap.set("#flash", { opacity: 0 });
 
@@ -262,10 +341,10 @@ __GFX__
 
       // ---- The card makes room for a title under it (the hook, big words, a counter), then grows back ----
       const FULL = { height: 1110 }, LOW = { height: 842 };
-      const titled = (s, i) => (i === 0 && F.hook) || (s.overlay && ["big_text", "counter"].includes(s.overlay.kind) && i > 0);
+      const titled = (s, i) => LOOK === "editorial" && ((i === 0 && F.hook) || (s.overlay && ["big_text", "counter"].includes(s.overlay.kind) && i > 0)); // the other looks fill the screen
       const hookEnd = Math.min(F.shots[0].end - 0.25, 3.4);
       let low = !!titled(F.shots[0], 0);
-      gsap.set("#frame", low ? LOW : FULL);
+      if (LOOK === "editorial") gsap.set("#frame", low ? LOW : FULL);
       const move = (to, at) => tl.to("#frame", { ...to, duration: 0.6, ease: "power3.inOut" }, Math.max(0, at));
       if (low && !(F.shots[0].overlay && F.shots[0].overlay.kind !== "none")) { move(FULL, hookEnd - 0.1); low = false; }
       F.shots.forEach((s, i) => {
@@ -279,11 +358,11 @@ __GFX__
       const hook = q("#hook");
       const words = calm(F.hook).split(/\s+/).filter(Boolean);
       hook.innerHTML = words.map((w, i) => `<span class="w${i === words.length - 1 ? " hl" : ""}">${w}</span>`).join(" ");
-      hook.classList.toggle("long", F.hook.length > 26);
+      hook.classList.toggle("long", F.hook.length > (LOOK === "editorial" ? 26 : 24));
       hook.classList.toggle("ta", TAMIL.test(F.hook));
       if (words.length) {
         tl.fromTo("#hook .w", { opacity: 0, y: 36 }, { opacity: 1, y: 0, duration: 0.3, stagger: 0.08, ease: "power3.out" }, 0.1);
-        tl.fromTo("#hook .hl", { backgroundSize: "0% 100%" }, { backgroundSize: "100% 100%", duration: 0.45, ease: "power2.out" }, 0.25 + words.length * 0.08);
+        if (LOOK === "editorial") tl.fromTo("#hook .hl", { backgroundSize: "0% 100%" }, { backgroundSize: "100% 100%", duration: 0.45, ease: "power2.out" }, 0.25 + words.length * 0.08);
         tl.to("#hook", { opacity: 0, y: -20, duration: 0.25, ease: "power2.in" }, hookEnd - 0.3);
       }
 
@@ -332,7 +411,7 @@ __GFX__
         subs.appendChild(el);
         tl.fromTo(el, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.14, ease: "power2.out" }, c.start);
         const key = el.querySelector("b");
-        if (key) tl.fromTo(key, { backgroundSize: "0% 100%" }, { backgroundSize: "100% 100%", duration: 0.3, ease: "power2.out" }, c.start + 0.12);
+        if (key && LOOK === "editorial") tl.fromTo(key, { backgroundSize: "0% 100%" }, { backgroundSize: "100% 100%", duration: 0.3, ease: "power2.out" }, c.start + 0.12);
         tl.to(el, { opacity: 0, duration: 0.1, ease: "power2.in" }, c.end - 0.1);
         tl.set(el, { visibility: "hidden" }, c.end);
       });

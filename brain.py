@@ -157,6 +157,12 @@ def film(req: str, job: Path) -> None:
         f = json.loads(old.read_text())
     else:
         pl = inp["plan"]
+        try:  # the Short's style, tapped with the plan: the bot keeps it in the row look:<job> (its Save Look step)
+            look = (studio(f"/x/get&key=look:{inp['job']}") or {}).get("look")
+        except Exception:  # noqa: BLE001 - no style chosen, or the studio is busy: the default look
+            look = None
+        if look in p.LOOKS:
+            pl = {**pl, "look": look}
         if inp.get("shape") == "video":  # the owner tapped 🖥 Video: a 16:9 lesson with the 3D host
             pl = {**pl, "format": "lesson"}
         f, usage = p.write_film(pl, series_parts(inp.get("lib") or [], pl.get("series", ""), int(pl.get("part") or 1)))
