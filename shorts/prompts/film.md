@@ -66,6 +66,9 @@ Direction per shot:
 
 Film fields:
 - hook: 2 to 6 English words shown big on screen over shot 1; the last word is highlighted.
+- thumb: the video's thumbnail. words: 2 to 4 punchy English words (not the whole title) that a person reads at a
+  glance on a phone and wants to tap; put asterisks around the one word to highlight, e.g. "Regions *&* Zones".
+  line: "" (not shown on a Short). shot: the number (first shot = 0) of the shot whose picture is the most striking and shows the topic at once.
 - title: the YouTube title, max 90 characters: a short Tamil phrase in Tamil script, then " | ", then the English hook. Curious, not clickbait lies.
 - description: 2 to 4 lines. A Tamil sentence, an English sentence summarising the fact, then "Follow Know This Daily for one new thing every day."
 - hashtags: exactly 5 to 6, in this order: #shorts, #tamil, 2 or 3 specific topic tags that people really search for this exact subject (the main subject's name or the precise question, not broad words like #ai, #facts, #explained, #tech, #learn), then #knowthisdaily. For kids stories use #kidsstory and #storiesforkids as the topic tags.

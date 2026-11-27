@@ -136,9 +136,13 @@ SHOT = {
         },
     },
 }
+THUMB = {  # the thumbnail: its few big words, a supporting line (16:9 only) and the shot whose picture it uses
+    "type": "object", "additionalProperties": False, "required": ["words", "line", "shot"],
+    "properties": {"words": {"type": "string"}, "line": {"type": "string"}, "shot": {"type": "integer"}},
+}
 FILM_SCHEMA = {
     "type": "object", "additionalProperties": False,
-    "required": ["hook", "title", "description", "hashtags", "tags", "en_title", "en_description", "en_hashtags",
+    "required": ["thumb", "hook", "title", "description", "hashtags", "tags", "en_title", "en_description", "en_hashtags",
                  "voice", "style", "for_kids", "shots"],
     "properties": {
         "for_kids": {"type": "boolean"},
@@ -147,7 +151,7 @@ FILM_SCHEMA = {
         "en_title": {"type": "string"}, "en_description": {"type": "string"},
         "en_hashtags": {"type": "array", "items": {"type": "string"}},
         "tags": {"type": "array", "items": {"type": "string"}},
-        "voice": {"enum": ["female", "male"]}, "style": {"type": "string"},
+        "voice": {"enum": ["female", "male"]}, "style": {"type": "string"}, "thumb": THUMB,
         "shots": {"type": "array", "minItems": 7, "maxItems": 14, "items": SHOT},
     },
 }
@@ -160,7 +164,7 @@ EXPLAINER_SHOT = {
 }
 EXPLAINER_SCHEMA = {
     "type": "object", "additionalProperties": False,
-    "required": ["format", "hook", "title", "description", "hashtags", "tags", "en_title", "en_description",
+    "required": ["format", "thumb", "hook", "title", "description", "hashtags", "tags", "en_title", "en_description",
                  "en_hashtags", "voice", "for_kids", "shots"],
     "properties": {
         "format": {"enum": ["explainer"]}, "for_kids": {"type": "boolean"},
@@ -168,7 +172,7 @@ EXPLAINER_SCHEMA = {
         "hashtags": {"type": "array", "items": {"type": "string"}}, "tags": {"type": "array", "items": {"type": "string"}},
         "en_title": {"type": "string"}, "en_description": {"type": "string"},
         "en_hashtags": {"type": "array", "items": {"type": "string"}},
-        "voice": {"enum": ["female", "male"]},
+        "voice": {"enum": ["female", "male"]}, "thumb": THUMB,
         "shots": {"type": "array", "minItems": 6, "maxItems": 11, "items": EXPLAINER_SHOT},
     },
 }
@@ -200,9 +204,9 @@ LESSON_INTRO = {  # the host in the centre says what today's lesson covers, then
 LESSON_SCHEMA = {  # a 16:9 lesson with the 3D host (the owner's "Video" button)
     "type": "object", "additionalProperties": False,
     "required": ["hook", "title", "description", "hashtags", "tags", "en_title", "en_description", "en_hashtags",
-                 "voice", "for_kids", "intro", "shots"],
+                 "voice", "for_kids", "intro", "shots", "thumb"],
     "properties": {
-        "intro": LESSON_INTRO,
+        "intro": LESSON_INTRO, "thumb": THUMB,
         "for_kids": {"type": "boolean"},
         "hook": {"type": "string"}, "title": {"type": "string"}, "description": {"type": "string"},
         "hashtags": {"type": "array", "items": {"type": "string"}}, "tags": {"type": "array", "items": {"type": "string"}},
@@ -482,7 +486,7 @@ def latest_news(made: list[str]) -> tuple[list[dict], dict]:
 
 def _text_rule(subtitles: str) -> str:
     """Tells the script writer which language every on-screen word is in (hook, overlays, graphic titles and labels)."""
-    return ("\nOn-screen words (the hook, overlay text and captions, animated graphic titles and labels) must be in Tamil "
+    return ("\nOn-screen words (the hook, thumbnail words, overlay text and captions, animated graphic titles and labels) must be in Tamil "
             "script, short and simple; this replaces the 'English' wording of those fields.\n" if subtitles == "ta" else "")
 
 
@@ -614,6 +618,10 @@ def clean_film(film: dict) -> dict:
     film["en_description"] = (film.get("en_description") or "").strip()
     film["title"] = film["title"].strip()[:100]
     film["hook"] = " ".join(film["hook"].split()[:7]) or "Know this"
+    t = film.get("thumb") if isinstance(film.get("thumb"), dict) else {}  # an older film has none: the hook stands in
+    film["thumb"] = {"words": " ".join(str(t.get("words") or film["hook"]).split()[:5]),
+                     "line": " ".join(str(t.get("line") or "").split()[:8]),
+                     "shot": min(max(int(t.get("shot") or 0), 0), len(film["shots"]) - 1)}
     none = {"kind": "none", "text": "", "value": 0, "suffix": ""}
     for s in film["shots"]:
         s["ta"] = speakable(s["ta"])

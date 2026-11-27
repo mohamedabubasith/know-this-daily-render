@@ -204,6 +204,8 @@ def done(job: Path) -> None:
            "format": f.get("format", "")}
     facts.pop("ok", None)
     facts["render"] = "github"
+    if os.environ.get("THUMB_ARTIFACT", "").isdigit():  # the thumbnail's GitHub artifact: the bot shows it and sets it on YouTube
+        facts["thumb"] = int(os.environ["THUMB_ARTIFACT"])
     studio("/gh/render", {"job": job.name, "ok": True, "facts": facts, "lib": lib, "captions": caps})
 
 

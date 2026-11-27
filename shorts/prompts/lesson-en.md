@@ -15,6 +15,7 @@ rules above wherever they differ.
 - Comparisons and objects come from everyday life worldwide, not one country.
 - Labels on the props are short English words.
 - The last line gives the takeaway and asks viewers to subscribe to Know This Daily for the next lesson of the series.
+- thumb words and line: English only.
 - title: English only, max 90 characters, no Tamil script, no " | ". description: 4 to 8 English lines, ending with
   "Subscribe to Know This Daily for the next lesson." hashtags: 10 to 12 English hashtags for a worldwide
   audience: first the 3 broadest that people search (e.g. #aws #cloudcomputing #amazonwebservices), then specific

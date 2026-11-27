@@ -541,9 +541,23 @@ jobs:
           name: ${{ inputs.job_id }}-preview
           path: job/${{ inputs.job_id }}/preview.mp4
           retention-days: 30
+      - name: Thumbnail (a failure here never stops the video)
+        continue-on-error: true
+        run: |
+          uv pip install -q --python .venv "playwright==1.55.0"
+          .venv/bin/python -m shorts.thumb "job/$JOB_ID"
+      - uses: actions/upload-artifact@v4
+        id: thumb
+        continue-on-error: true
+        with:
+          name: ${{ inputs.job_id }}-thumb
+          path: job/${{ inputs.job_id }}/thumb.jpg
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Tell the studio it is ready
         env:
           STUDIO_URL: ${{ secrets.STUDIO_URL }}
+          THUMB_ARTIFACT: ${{ steps.thumb.outputs.artifact-id }}
         run: .venv/bin/python brain.py done "job/$JOB_ID"
 
   report:

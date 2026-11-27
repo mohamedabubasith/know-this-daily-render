@@ -49,6 +49,9 @@ knows (Tamil Nadu homes, fields, shops, streets) unless the topic needs another 
 Film fields:
 - format: "explainer".
 - hook: 2 to 6 English words that sum up the question of the film.
+- thumb: the video's thumbnail. words: 2 to 4 punchy English words (not the whole title) that a person reads at a
+  glance on a phone and wants to tap; put asterisks around the one word to highlight, e.g. "Regions *&* Zones".
+  line: "" (not shown on a Short). shot: the number (first shot = 0) of the shot whose picture is the most striking and shows the topic at once.
 - title: max 90 characters: a short Tamil phrase in Tamil script, then " | ", then the English hook.
 - description: 2 to 4 lines: a Tamil sentence, an English sentence, then "Follow Know This Daily for one new thing
   every day."

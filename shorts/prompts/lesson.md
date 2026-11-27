@@ -71,6 +71,9 @@ them: never the same pose on 3 lines in a row; start most lines with a move at 0
 
 Video fields:
 - hook: 2 to 6 English words that sum up the question of the lesson.
+- thumb: the video's thumbnail. words: 2 to 4 punchy Tamil (Tamil script) words (not the whole title) that a person reads at a
+  glance on a phone and wants to tap; put asterisks around the one word to highlight, e.g. "Regions *&* Zones".
+  line: one short supporting line under them, max 6 words, same language. shot: 0.
 - title: max 90 characters: a short Tamil phrase in Tamil script, then " | ", then an English title.
 - description: 4 to 8 lines: what the viewer will learn in Tamil, the same in English, then "Subscribe to Know This
   Daily for one new lesson every week."
