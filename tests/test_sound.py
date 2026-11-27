@@ -26,4 +26,22 @@ assert t["subs"][0]["start"] == 2.5 and t["shots"][0]["start"] == 0.0  # the tex
 assert p.sound_of(film(sound={"voice_start": 99, "gap": -1, "music": "loud"})) == {"voice_start": 8.0, "gap": 0.15, "music": "on"}
 assert p.sound_of(film(format="lesson")) == {"voice_start": 0.5, "gap": 0.35, "music": "on"}
 assert p.sound_note(film()) == "" and p.sound_note(film(sound={"voice_start": 2.5, "music": "off"})) == "voice starts at 2.5 s, music off"
+
+# An edit that asks for the other voice language changes the film's language (it was silently kept before).
+calls = []
+
+
+def fake(system, prompt, schema, step, *a, **k):
+    calls.append((step, system, prompt))
+    if step == "edit-intent":
+        return {"format": "facts", "subtitles": "en", "lang": "en", "voice_start": 0.3, "gap": 0.55, "music": "on"}, {}
+    return {"hook": "Turbo magic", "title": "How a Turbo Works", "description": "d", "hashtags": [], "tags": [], "en_title": "",
+            "en_description": "", "en_hashtags": [], "voice": "male", "style": "", "for_kids": False,
+            "thumb": {"words": "Turbo *Magic*", "line": "", "shot": 0}, "shots": [dict(SHOT, image="i") for _ in range(7)]}, {}
+
+
+p.claude_json, p.trend_tags = fake, lambda f: f
+out, _ = p.revise_film({**film(format="facts", lang="ta", subtitles="en"), "brief": {}}, "Use image video and english voice")
+assert out["lang"] == "en" and out["sound"] == {} and "#tamil" not in out["hashtags"]
+assert "ENGLISH VIDEO" in calls[1][1] and "changes from Tamil to English" in calls[1][2]  # the writer gets the English rules
 print("sound ok")

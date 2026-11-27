@@ -491,8 +491,8 @@ def _text_rule(subtitles: str) -> str:
 
 
 EDIT_INTENT_SCHEMA = {"type": "object", "additionalProperties": False,
-                      "required": ["format", "subtitles", "voice_start", "gap", "music"],
-                      "properties": {"format": {"enum": FORMATS}, "subtitles": {"enum": ["ta", "en"]},
+                      "required": ["format", "subtitles", "lang", "voice_start", "gap", "music"],
+                      "properties": {"format": {"enum": FORMATS}, "subtitles": {"enum": ["ta", "en"]}, "lang": {"enum": ["ta", "en"]},
                                      "voice_start": {"type": "number"}, "gap": {"type": "number"},
                                      "music": {"enum": list(MUSIC_LEVEL)}}}
 EDIT_INTENT = """A video exists in one of three formats:
@@ -505,6 +505,9 @@ have AFTER the change. Keep the current value unless the owner asks for somethin
 images, pictures, photos or realistic visuals instead of drawings or characters means "facts" (or "story" for a
 kids story); asking for drawn, cartoon or fully animated instead of pictures means "explainer"; asking for Tamil
 or English text switches the language. Animated text over pictures is still "facts".
+Its voice (the narration) is spoken in "ta" (Tamil) or "en" (English): return it as lang. Keep the current value unless
+the owner asks for the voice, narration or audio in the other language ("english voice", "speak in Tamil"). The text
+language and the voice language are separate: change only the one the owner names.
 It also has three sound settings: voice_start (seconds of picture and music before the first spoken word; the
 on-screen text of a line appears with its voice), gap (seconds of quiet between two spoken lines) and music
 ("on", "soft" = quieter, "off" = none). Return them as they should be AFTER the change: keep the current value
@@ -512,19 +515,27 @@ unless the owner asks about when the voice or text starts, the pauses between li
 "Start the voice 2 or 3 seconds after the video starts" means voice_start 2.5."""
 
 
-def edit_intent(film: dict, change: str) -> tuple[str, str, dict]:
-    """Which format, on-screen language and sound settings the owner's re-edit asks for (their words, read by the model)."""
+def edit_intent(film: dict, change: str) -> tuple[str, str, dict, str]:
+    """Which format, on-screen language, sound settings and voice language the owner's re-edit asks for (their words, read by the model)."""
     cur = (film.get("format", "facts"), film.get("subtitles", "en"))
+    lang = film.get("lang") or "ta"
     old, now = film.get("sound") or {}, sound_of(film)
     try:
-        d, _ = claude_json(EDIT_INTENT, f"Current format: {cur[0]}. Current on-screen text: {cur[1]}. For kids: {bool(film.get('for_kids'))}.\n"
+        d, _ = claude_json(EDIT_INTENT, f"Current format: {cur[0]}. Current on-screen text: {cur[1]}. Current voice: {lang}. For kids: {bool(film.get('for_kids'))}.\n"
                            f"Current sound settings: voice_start {now['voice_start']}, gap {now['gap']}, music {now['music']}.\n"
                            f"Change request:\n\"\"\"\n{change}\n\"\"\"", EDIT_INTENT_SCHEMA, "edit-intent", "haiku", think=False)
         want = sound_of({"format": film.get("format"), "sound": d})
         # keep only what an edit set, so a film that changes format still gets the new format's own defaults
-        return d["format"], d["subtitles"], {k: want[k] for k in now if k in old or want[k] != now[k]}
+        return d["format"], d["subtitles"], {k: want[k] for k in now if k in old or want[k] != now[k]}, d["lang"]
     except (StepError, KeyError, TypeError, ValueError):
-        return (*cur, old)
+        return (*cur, old, lang)
+
+
+def _lang_rule(old: str, new: str) -> str:
+    """Tells the script writer that the edit changes the spoken language."""
+    name = {"ta": "Tamil", "en": "English"}
+    return (f"\nThe narration changes from {name[old]} to {name[new]}: follow the {name[new]} rules above for every field "
+            "(spoken lines, title, description, hashtags, tags), and keep what each line says.\n" if old != new else "")
 
 
 SOUND_RULE = ("\nWhen the voice starts, the pauses between lines and the background music are set separately: never change, "
@@ -541,16 +552,22 @@ def revise_film(film: dict, change: str) -> tuple[dict, dict]:
                   f"this change:\n{change}\n\nReturn the full revised lesson. Keep every line the change does not touch exactly as "
                   "it is, word for word, so its voice can be reused. If the change is only about how it looks or moves, return "
                   "every line unchanged: the motion designer gets the owner's words too." + SOUND_RULE)
-        film2, usage = claude_json(_lesson_prompt(film.get("lang", "ta")), prompt, LESSON_SCHEMA, "film-edit")
-        film2["lang"] = film.get("lang", "ta")
+        _, _, sound, lang = edit_intent(film, change)
+        film2, usage = claude_json(_lesson_prompt(lang), prompt + _lang_rule(film.get("lang") or "ta", lang), LESSON_SCHEMA, "film-edit")
+        film2["lang"] = lang
         film2 = clean_film(_lesson_shots(film2))
-        for k in ("category", "series", "part", "brief", "subtitles"):
+        for k in ("category", "series", "part", "brief"):  # subtitles follow the voice language (_lesson_shots)
             if k in film:
                 film2[k] = film[k]
         film2["author_change"] = change
-        film2["sound"] = edit_intent(film, change)[2]
+        film2["sound"] = sound
+        if film2.get("brief"):
+            film2["brief"]["lang"] = lang
         return trend_tags(film2), usage
-    fmt, subs, sound = edit_intent(film, change)
+    fmt, subs, sound, lang = edit_intent(film, change)
+    if lang == "en":
+        subs = "en"  # an English video has English words on screen
+    relang = _lang_rule(film.get("lang") or "ta", lang)
     switched = fmt != film.get("format", "facts")
     lines = [{k: sh.get(k, "") for k in ("ta", "en", "mood")} for sh in film["shots"]]
     prompt = (f"Current shot list:\n{json.dumps(lines if switched else film, ensure_ascii=False, indent=1)}\n\n"
@@ -560,17 +577,17 @@ def revise_film(film: dict, change: str) -> tuple[dict, dict]:
                  "Return the full revised shot list. Keep every shot that the change does not touch exactly as it is, "
                  "word for word, so its picture and voice can be reused.") + SOUND_RULE)
     if fmt == "explainer":
-        film2, usage = claude_json(_prompt("explainer.md", film.get("lang", "ta")), prompt + (
+        film2, usage = claude_json(_prompt("explainer.md", lang), prompt + relang + (
             "\nIf the change is only about how the film looks or moves (drawings, colours, animation, pacing of the "
             "picture), return every line unchanged: the illustrator gets the owner's words too."), EXPLAINER_SCHEMA, "film-edit")
-        film2["lang"] = film.get("lang", "ta")
+        film2["lang"] = lang
         film2 = clean_film(_explainer_shots(film2))
         film2["brief"] = film.get("brief", {})
         film2["author_change"] = change  # the illustrator applies it to the drawn scenes
     else:
-        film2, usage = claude_json(_prompt("film.md", film.get("lang", "ta")), prompt + _text_rule(subs), FILM_SCHEMA, "film-edit")
+        film2, usage = claude_json(_prompt("film.md", lang), prompt + relang + _text_rule(subs), FILM_SCHEMA, "film-edit")
         film2["format"] = fmt
-        film2["lang"] = film.get("lang", "ta")
+        film2["lang"] = lang
         film2 = clean_film(film2)
     for k in ("category", "series", "part", "subtitles"):
         if k in film:
@@ -579,6 +596,7 @@ def revise_film(film: dict, change: str) -> tuple[dict, dict]:
     film2["sound"] = sound
     if film2.get("brief"):
         film2["brief"]["subtitles"] = film2.get("subtitles", "en")
+        film2["brief"]["lang"] = lang
     return trend_tags(film2), usage
 
 
