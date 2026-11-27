@@ -98,11 +98,12 @@
       [data-look="editorial"] #sub-rule { display: block; position: absolute; left: 80px; width: 920px; top: 1400px; height: 3px; background: var(--ink); transform-origin: 0 50%; }
       [data-look="editorial"] .sub { left: 80px; width: 900px; top: 1426px; font: 700 60px/1.2 var(--font-text); text-wrap: balance; }
       [data-look="editorial"] .sub.ta { line-height: 1.4; font-size: 50px; }
-      [data-look="editorial"] .sub b { font-weight: 800; background: linear-gradient(transparent 56%, var(--mark) 56%) no-repeat 0 0 / 0% 100%; }
+      [data-look="editorial"] .sub b { font-weight: 800; padding: 0 12px; margin: 0 -4px; border-radius: 8px; background: linear-gradient(var(--accent), var(--accent)) no-repeat 0 0 / 0% 100%;
+        -webkit-box-decoration-break: clone; box-decoration-break: clone; }
       [data-look="editorial"] #grain { opacity: 0.06; mix-blend-mode: multiply; }
       [data-look="editorial"] #endcard svg { border: 4px solid var(--ink); box-shadow: 14px 14px 0 var(--accent); }
       [data-look="editorial"] #end-name { font: 900 96px/1 var(--font-display); letter-spacing: -0.025em; }
-      [data-look="editorial"] #end-line b { background: linear-gradient(transparent 56%, var(--mark) 56%); font-weight: 800; }
+      [data-look="editorial"] #end-line b { background: var(--accent); color: var(--paper); padding: 0 12px; border-radius: 8px; font-weight: 800; }
       #hook.ta, .ov.ta, .anim-title.ta { line-height: 1.22 !important; letter-spacing: 0 !important; }
 
       /* ---------------------------------------------------------------- punch */
@@ -356,9 +357,14 @@ __GFX__
 
       // ---- Hook above the first picture: word by word, then the marker runs under the last word ----
       const hook = q("#hook");
-      const words = calm(F.hook).split(/\s+/).filter(Boolean);
-      hook.innerHTML = words.map((w, i) => `<span class="w${i === words.length - 1 ? " hl" : ""}">${w}</span>`).join(" ");
-      hook.classList.toggle("long", F.hook.length > (LOOK === "editorial" ? 26 : 24));
+      // The writer may mark the key words with *stars*; with none, the last word is the key word.
+      let on = false;
+      const marks = F.hook.split(/\s+/).filter(Boolean).map((w) => { const m = on || w.includes("*"); if ((w.match(/\*/g) || []).length % 2) on = !on; return m; });
+      const plain = F.hook.replace(/\*/g, "");
+      const words = calm(plain).split(/\s+/).filter(Boolean);
+      const starred = marks.some(Boolean);
+      hook.innerHTML = words.map((w, i) => `<span class="w${(starred ? marks[i] : i === words.length - 1) ? " hl" : ""}">${w}</span>`).join(" ");
+      hook.classList.toggle("long", plain.length > (LOOK === "editorial" ? 26 : 24));
       hook.classList.toggle("ta", TAMIL.test(F.hook));
       if (words.length) {
         tl.fromTo("#hook .w", { opacity: 0, y: 36 }, { opacity: 1, y: 0, duration: 0.3, stagger: 0.08, ease: "power3.out" }, 0.1);
@@ -399,7 +405,7 @@ __GFX__
         tl.set(el, { visibility: "hidden" }, outAt + 0.2);
       });
 
-      // ---- Captions, a few words at a time; the marker runs under the *key word* ----
+      // ---- Captions, a few words at a time; a block of colour marks the *key word* ----
       const subs = q("#subs");
       const esc = (t) => t.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
       tl.fromTo("#sub-rule", { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: "power3.out" }, Math.max(0, (F.subs[0] ? F.subs[0].start : 0.3) - 0.2));
@@ -411,7 +417,10 @@ __GFX__
         subs.appendChild(el);
         tl.fromTo(el, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.14, ease: "power2.out" }, c.start);
         const key = el.querySelector("b");
-        if (key && LOOK === "editorial") tl.fromTo(key, { backgroundSize: "0% 100%" }, { backgroundSize: "100% 100%", duration: 0.3, ease: "power2.out" }, c.start + 0.12);
+        if (key && LOOK === "editorial") {  // a solid block sweeps across the key word and its letters turn to paper
+          tl.fromTo(key, { backgroundSize: "0% 100%" }, { backgroundSize: "100% 100%", duration: 0.28, ease: "power2.out" }, c.start + 0.12);
+          tl.to(key, { color: getComputedStyle(document.documentElement).getPropertyValue("--paper").trim(), duration: 0.2, ease: "none" }, c.start + 0.16);
+        }
         tl.to(el, { opacity: 0, duration: 0.1, ease: "power2.in" }, c.end - 0.1);
         tl.set(el, { visibility: "hidden" }, c.end);
       });
